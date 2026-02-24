@@ -1,4 +1,4 @@
-use super::initialize_mu_safe;
+use super::{compute_irls_weights, initialize_mu_safe, validate_glm_inputs};
 use ndarray::ArrayView2;
 
 // =============================================================================
@@ -50,8 +50,8 @@ use ndarray::{Array1, Array2};
 use rayon::prelude::*;
 
 use super::irls::{IRLSConfig, IRLSResult};
-use crate::constants::{MAX_IRLS_WEIGHT, ZERO_TOL};
-use crate::error::{Result, RustyStatsError};
+use crate::constants::ZERO_TOL;
+use crate::error::Result;
 use crate::families::Family;
 use crate::links::Link;
 use crate::regularization::{soft_threshold, RegularizationConfig};
@@ -89,26 +89,13 @@ pub(crate) fn fit_glm_coordinate_descent(
     skip_covariance: bool,
 ) -> Result<IRLSResult> {
     // -------------------------------------------------------------------------
-    // Step 0: Validate inputs
+    // Step 0: Validate inputs and set up offset/weights
     // -------------------------------------------------------------------------
     let n = y.len();
     let p = x.ncols();
-
-    if x.nrows() != n {
-        return Err(RustyStatsError::DimensionMismatch(format!(
-            "X has {} rows but y has {} elements",
-            x.nrows(),
-            n
-        )));
-    }
-
-    if n == 0 {
-        return Err(RustyStatsError::EmptyInput("y is empty".to_string()));
-    }
-
-    if p == 0 {
-        return Err(RustyStatsError::EmptyInput("X has no columns".to_string()));
-    }
+    let validated = validate_glm_inputs(y, x, offset, weights)?;
+    let offset_vec = validated.offset;
+    let prior_weights_vec = validated.prior_weights;
 
     // Get penalty parameters
     let l1_penalty = reg_config.penalty.l1_penalty();
@@ -119,42 +106,6 @@ pub(crate) fn fit_glm_coordinate_descent(
     let pen_start = if has_intercept { 1 } else { 0 };
 
     // -------------------------------------------------------------------------
-    // Step 0b: Set up offset and prior weights
-    // -------------------------------------------------------------------------
-    let offset_vec = match offset {
-        Some(o) => {
-            if o.len() != n {
-                return Err(RustyStatsError::DimensionMismatch(format!(
-                    "offset has {} elements but y has {}",
-                    o.len(),
-                    n
-                )));
-            }
-            o.clone()
-        }
-        None => Array1::zeros(n),
-    };
-
-    let prior_weights_vec = match weights {
-        Some(w) => {
-            if w.len() != n {
-                return Err(RustyStatsError::DimensionMismatch(format!(
-                    "weights has {} elements but y has {}",
-                    w.len(),
-                    n
-                )));
-            }
-            if w.iter().any(|&x| x < 0.0) {
-                return Err(RustyStatsError::InvalidValue(
-                    "weights must be non-negative".to_string(),
-                ));
-            }
-            w.clone()
-        }
-        None => Array1::ones(n),
-    };
-
-    // -------------------------------------------------------------------------
     // Step 1: Precompute X'X diagonal (sum of squared predictors, weighted)
     // These are recomputed each IRLS iteration with updated weights
     // -------------------------------------------------------------------------
@@ -162,17 +113,18 @@ pub(crate) fn fit_glm_coordinate_descent(
     // -------------------------------------------------------------------------
     // Step 2: Initialize coefficients and μ (with warm start support)
     // -------------------------------------------------------------------------
+    let mut warnings: Vec<String> = Vec::new();
     let mut coefficients = if let Some(init) = init_coefficients {
         if init.len() == p {
             init.clone()
         } else {
             // Dimension mismatch - fall back to cold start with warning
-            eprintln!(
-                "Warning: Warm-start coefficient dimension mismatch (got {}, expected {}). \
+            warnings.push(format!(
+                "Warm-start coefficient dimension mismatch (got {}, expected {}). \
                 Falling back to cold start. This may indicate a bug in the caller.",
                 init.len(),
                 p
-            );
+            ));
             Array1::zeros(p)
         }
     } else {
@@ -182,11 +134,7 @@ pub(crate) fn fit_glm_coordinate_descent(
     // Initialize intercept to link(mean(y)) only if not warm starting
     if init_coefficients.is_none() && has_intercept {
         let y_mean = y.mean().unwrap_or(1.0);
-        let y_mean_clamped = match family.name() {
-            "Poisson" | "Gamma" => y_mean.max(0.01),
-            "Binomial" => y_mean.clamp(0.01, 0.99),
-            _ => y_mean,
-        };
+        let y_mean_clamped = family.clamp_mu(&Array1::from_elem(1, y_mean))[0];
         coefficients[0] = link.link(&Array1::from_elem(1, y_mean_clamped))[0];
     }
 
@@ -228,53 +176,19 @@ pub(crate) fn fit_glm_coordinate_descent(
         // ---------------------------------------------------------------------
         // Step 5a: Compute working weights and working response
         // ---------------------------------------------------------------------
-        // OPTIMIZATION: Use true Hessian weights for Gamma/Tweedie with log link
-        // This can dramatically reduce IRLS iterations (50-100 → 5-10)
-        let link_deriv = link.derivative(&mu);
-
-        let use_true_hessian = family.use_true_hessian_weights() && link.name() == "log";
-        let hessian_weights = if use_true_hessian {
-            Some(family.true_hessian_weights(&mu, y))
-        } else {
-            None
-        };
-        let variance = if use_true_hessian {
-            None
-        } else {
-            Some(family.variance(&mu))
-        };
-
-        // PARALLEL: Compute IRLS weights, combined weights, and working response
-        let min_weight = irls_config.min_weight;
-        let results: Vec<(f64, f64, f64)> = (0..n)
-            .into_par_iter()
-            .map(|i| {
-                let d = link_deriv[i];
-                let iw = if let Some(ref hw) = hessian_weights {
-                    // True Hessian weight - use directly without dividing by d²
-                    hw[i].max(min_weight).min(MAX_IRLS_WEIGHT)
-                } else {
-                    let v = variance
-                        .as_ref()
-                        .expect("variance present in Fisher branch")[i];
-                    (1.0 / (v * d * d)).max(min_weight).min(MAX_IRLS_WEIGHT)
-                };
-                let cw = prior_weights_vec[i] * iw;
-                let wr = (eta[i] - offset_vec[i]) + (y[i] - mu[i]) * d;
-                (iw, cw, wr)
-            })
-            .collect();
-
-        let mut combined_weights_vec = Vec::with_capacity(n);
-        let mut working_response_vec = Vec::with_capacity(n);
-        for (i, &(iw, cw, wr)) in results.iter().enumerate() {
-            irls_weights[i] = iw;
-            combined_weights_vec.push(cw);
-            working_response_vec.push(wr);
-        }
-
-        let combined_weights = Array1::from_vec(combined_weights_vec);
-        let working_response = Array1::from_vec(working_response_vec);
+        let weight_result = compute_irls_weights(
+            y,
+            &mu,
+            &eta,
+            &offset_vec,
+            &prior_weights_vec,
+            family,
+            link,
+            irls_config.min_weight,
+        );
+        irls_weights = weight_result.irls_weights;
+        let combined_weights = weight_result.combined_weights;
+        let working_response = weight_result.working_response;
 
         // ---------------------------------------------------------------------
         // Step 5b: Coordinate descent using COVARIANCE UPDATES (glmnet-style)
@@ -415,11 +329,17 @@ pub(crate) fn fit_glm_coordinate_descent(
             }
         }
 
-        if irls_config.verbose && !cd_converged {
-            eprintln!(
-                "Warning: Coordinate descent did not converge in {} iterations",
+        if !cd_converged {
+            if irls_config.verbose {
+                eprintln!(
+                    "Warning: Coordinate descent did not converge in {} iterations",
+                    reg_config.max_cd_iterations
+                );
+            }
+            warnings.push(format!(
+                "Coordinate descent did not converge in {} iterations",
                 reg_config.max_cd_iterations
-            );
+            ));
         }
 
         // ---------------------------------------------------------------------
@@ -504,6 +424,7 @@ pub(crate) fn fit_glm_coordinate_descent(
         family_name: family.name().to_string(),
         penalty: reg_config.penalty.clone(),
         design_matrix: None, // Computed lazily in Python layer to avoid expensive copy
+        warnings,
     })
 }
 

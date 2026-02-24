@@ -40,6 +40,8 @@
 //
 // =============================================================================
 
+use std::borrow::Cow;
+
 use super::Family;
 use crate::links::{Link, LogitLink};
 use ndarray::Array1;
@@ -68,8 +70,8 @@ impl Family for BinomialFamily {
     /// Variance function: V(μ) = μ(1-μ)
     ///
     /// Maximum at μ = 0.5, approaches 0 as μ approaches 0 or 1.
-    fn variance(&self, mu: &Array1<f64>) -> Array1<f64> {
-        mu.mapv(|p| p * (1.0 - p))
+    fn variance<'a>(&self, mu: &'a Array1<f64>) -> Cow<'a, Array1<f64>> {
+        Cow::Owned(mu.mapv(|p| p * (1.0 - p)))
     }
 
     /// Unit deviance for binomial: 2 × [y×log(y/μ) + (1-y)×log((1-y)/(1-μ))]
@@ -183,7 +185,7 @@ mod tests {
         // V(0.5) = 0.5 × 0.5 = 0.25 (maximum)
         // V(0.8) = 0.8 × 0.2 = 0.16
         let expected = array![0.16, 0.25, 0.16];
-        assert_abs_diff_eq!(var, expected, epsilon = 1e-10);
+        assert_abs_diff_eq!(*var, expected, epsilon = 1e-10);
     }
 
     #[test]
@@ -197,7 +199,7 @@ mod tests {
         let var1 = family.variance(&mu1);
         let var2 = family.variance(&mu2);
 
-        assert_abs_diff_eq!(var1, var2, epsilon = 1e-10);
+        assert_abs_diff_eq!(*var1, *var2, epsilon = 1e-10);
     }
 
     #[test]

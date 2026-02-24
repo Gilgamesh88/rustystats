@@ -9,13 +9,12 @@ splines, and prediction consistency.
 import numpy as np
 import polars as pl
 import pytest
-
 import rustystats as rs
-
 
 # =============================================================================
 # Construction Tests
 # =============================================================================
+
 
 class TestDictConstruction:
     """Test FormulaGLMDict construction."""
@@ -24,99 +23,105 @@ class TestDictConstruction:
     def sample_data(self):
         np.random.seed(42)
         n = 100
-        return pl.DataFrame({
-            'y': np.random.poisson(1, n),
-            'x1': np.random.uniform(0, 10, n),
-            'x2': np.random.uniform(0, 10, n),
-            'cat': np.random.choice(['A', 'B', 'C'], n),
-            'exposure': np.random.uniform(0.5, 1.5, n),
-            'weight': np.random.uniform(0.5, 2.0, n),
-        })
+        return pl.DataFrame(
+            {
+                "y": np.random.poisson(1, n),
+                "x1": np.random.uniform(0, 10, n),
+                "x2": np.random.uniform(0, 10, n),
+                "cat": np.random.choice(["A", "B", "C"], n),
+                "exposure": np.random.uniform(0.5, 1.5, n),
+                "weight": np.random.uniform(0.5, 2.0, n),
+            }
+        )
 
     def test_basic_construction(self, sample_data):
         model = rs.glm_dict(
-            response='y',
-            terms={'x1': {'type': 'linear'}, 'x2': {'type': 'linear'}},
+            response="y",
+            terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
             data=sample_data,
         )
-        assert model.family == 'gaussian'
+        assert model.family == "gaussian"
         assert model.n_obs == 100
         assert model.n_params == 3  # Intercept + x1 + x2
 
     def test_poisson_construction(self, sample_data):
         model = rs.glm_dict(
-            response='y',
-            terms={'x1': {'type': 'linear'}},
+            response="y",
+            terms={"x1": {"type": "linear"}},
             data=sample_data,
-            family='poisson',
+            family="poisson",
         )
-        assert model.family == 'poisson'
+        assert model.family == "poisson"
 
     def test_binomial_construction(self):
         np.random.seed(42)
-        data = pl.DataFrame({
-            'y': np.random.binomial(1, 0.5, 100),
-            'x1': np.random.uniform(0, 10, 100),
-        })
-        model = rs.glm_dict(
-            response='y',
-            terms={'x1': {'type': 'linear'}},
-            data=data,
-            family='binomial',
+        data = pl.DataFrame(
+            {
+                "y": np.random.binomial(1, 0.5, 100),
+                "x1": np.random.uniform(0, 10, 100),
+            }
         )
-        assert model.family == 'binomial'
+        model = rs.glm_dict(
+            response="y",
+            terms={"x1": {"type": "linear"}},
+            data=data,
+            family="binomial",
+        )
+        assert model.family == "binomial"
 
     def test_gamma_construction(self):
         np.random.seed(42)
-        data = pl.DataFrame({
-            'y': np.random.gamma(2, 2, 100),
-            'x1': np.random.uniform(0, 10, 100),
-        })
-        model = rs.glm_dict(
-            response='y',
-            terms={'x1': {'type': 'linear'}},
-            data=data,
-            family='gamma',
+        data = pl.DataFrame(
+            {
+                "y": np.random.gamma(2, 2, 100),
+                "x1": np.random.uniform(0, 10, 100),
+            }
         )
-        assert model.family == 'gamma'
+        model = rs.glm_dict(
+            response="y",
+            terms={"x1": {"type": "linear"}},
+            data=data,
+            family="gamma",
+        )
+        assert model.family == "gamma"
 
     def test_offset_as_column_name(self, sample_data):
         model = rs.glm_dict(
-            response='y',
-            terms={'x1': {'type': 'linear'}},
+            response="y",
+            terms={"x1": {"type": "linear"}},
             data=sample_data,
-            family='poisson',
-            offset='exposure',
+            family="poisson",
+            offset="exposure",
         )
         assert model.offset is not None
         assert len(model.offset) == 100
 
     def test_offset_as_array(self, sample_data):
-        offset_arr = np.log(sample_data['exposure'].to_numpy())
+        offset_arr = np.log(sample_data["exposure"].to_numpy())
         model = rs.glm_dict(
-            response='y',
-            terms={'x1': {'type': 'linear'}},
+            response="y",
+            terms={"x1": {"type": "linear"}},
             data=sample_data,
-            family='poisson',
+            family="poisson",
             offset=offset_arr,
         )
         assert model.offset is not None
 
     def test_weights_as_column_name(self, sample_data):
         model = rs.glm_dict(
-            response='y',
-            terms={'x1': {'type': 'linear'}},
+            response="y",
+            terms={"x1": {"type": "linear"}},
             data=sample_data,
-            weights='weight',
+            weights="weight",
         )
         assert model.weights is not None
         assert len(model.weights) == 100
 
     def test_weights_as_array(self, sample_data):
-        weights_arr = sample_data['weight'].to_numpy()
+        weights_arr = sample_data["weight"].to_numpy()
         model = rs.glm_dict(
-            response='y',
-            terms={'x1': {'type': 'linear'}},
+            response="y",
+            terms={"x1": {"type": "linear"}},
             data=sample_data,
             weights=weights_arr,
         )
@@ -128,6 +133,7 @@ class TestDictConstruction:
 # Mirrors: test_formula_glm.py → TestGLMFitting
 # =============================================================================
 
+
 class TestDictFitting:
     """Test GLM fitting for various families (mirrors TestGLMFitting)."""
 
@@ -135,11 +141,13 @@ class TestDictFitting:
         np.random.seed(42)
         x = np.random.uniform(0, 10, 100)
         y = 2 + 3 * x + np.random.normal(0, 1, 100)
-        data = pl.DataFrame({'y': y, 'x': x})
+        data = pl.DataFrame({"y": y, "x": x})
 
         result = rs.glm_dict(
-            response='y', terms={'x': {'type': 'linear'}},
-            data=data, family='gaussian',
+            response="y",
+            terms={"x": {"type": "linear"}},
+            data=data,
+            family="gaussian",
         ).fit()
 
         assert result.converged
@@ -153,11 +161,13 @@ class TestDictFitting:
         x = np.random.uniform(0, 2, n)
         mu = np.exp(0.5 + 0.5 * x)
         y = np.random.poisson(mu)
-        data = pl.DataFrame({'y': y, 'x': x})
+        data = pl.DataFrame({"y": y, "x": x})
 
         result = rs.glm_dict(
-            response='y', terms={'x': {'type': 'linear'}},
-            data=data, family='poisson',
+            response="y",
+            terms={"x": {"type": "linear"}},
+            data=data,
+            family="poisson",
         ).fit()
 
         assert result.converged
@@ -169,11 +179,13 @@ class TestDictFitting:
         x = np.random.uniform(-2, 2, n)
         p = 1 / (1 + np.exp(-(0.5 + x)))
         y = np.random.binomial(1, p)
-        data = pl.DataFrame({'y': y.astype(float), 'x': x})
+        data = pl.DataFrame({"y": y.astype(float), "x": x})
 
         result = rs.glm_dict(
-            response='y', terms={'x': {'type': 'linear'}},
-            data=data, family='binomial',
+            response="y",
+            terms={"x": {"type": "linear"}},
+            data=data,
+            family="binomial",
         ).fit()
 
         assert result.converged
@@ -185,11 +197,13 @@ class TestDictFitting:
         x = np.random.uniform(1, 5, n)
         mu = np.exp(1 + 0.3 * x)
         y = np.random.gamma(2, mu / 2, n)
-        data = pl.DataFrame({'y': y, 'x': x})
+        data = pl.DataFrame({"y": y, "x": x})
 
         result = rs.glm_dict(
-            response='y', terms={'x': {'type': 'linear'}},
-            data=data, family='gamma',
+            response="y",
+            terms={"x": {"type": "linear"}},
+            data=data,
+            family="gamma",
         ).fit()
 
         assert result.converged
@@ -200,11 +214,13 @@ class TestDictFitting:
         n = 100
         x = np.random.uniform(0, 5, n)
         y = np.random.poisson(np.exp(0.5 + 0.3 * x))
-        data = pl.DataFrame({'y': y, 'x': x})
+        data = pl.DataFrame({"y": y, "x": x})
 
         result = rs.glm_dict(
-            response='y', terms={'x': {'type': 'linear'}},
-            data=data, family='quasipoisson',
+            response="y",
+            terms={"x": {"type": "linear"}},
+            data=data,
+            family="quasipoisson",
         ).fit()
 
         assert result.converged
@@ -215,15 +231,17 @@ class TestDictFitting:
         x = np.random.uniform(0, 2, n)
         mu = np.exp(0.5 + 0.3 * x)
         y = np.random.negative_binomial(2, 2 / (2 + mu))
-        data = pl.DataFrame({'y': y.astype(float), 'x': x})
+        data = pl.DataFrame({"y": y.astype(float), "x": x})
 
         result = rs.glm_dict(
-            response='y', terms={'x': {'type': 'linear'}},
-            data=data, family='negbinomial',
+            response="y",
+            terms={"x": {"type": "linear"}},
+            data=data,
+            family="negbinomial",
         ).fit()
 
         assert result.converged
-        assert 'NegativeBinomial' in result.family
+        assert "NegativeBinomial" in result.family
 
     def test_fit_with_offset(self):
         np.random.seed(42)
@@ -231,11 +249,14 @@ class TestDictFitting:
         exposure = np.random.uniform(0.5, 2, n)
         x = np.random.uniform(0, 5, n)
         y = np.random.poisson(exposure * np.exp(0.5 + 0.2 * x))
-        data = pl.DataFrame({'y': y, 'x': x, 'exposure': exposure})
+        data = pl.DataFrame({"y": y, "x": x, "exposure": exposure})
 
         result = rs.glm_dict(
-            response='y', terms={'x': {'type': 'linear'}},
-            data=data, family='poisson', offset='exposure',
+            response="y",
+            terms={"x": {"type": "linear"}},
+            data=data,
+            family="poisson",
+            offset="exposure",
         ).fit()
 
         assert result.converged
@@ -246,11 +267,13 @@ class TestDictFitting:
         x = np.random.uniform(0, 10, n)
         y = 2 + 3 * x + np.random.normal(0, 1, n)
         weights = np.random.uniform(0.5, 2, n)
-        data = pl.DataFrame({'y': y, 'x': x, 'w': weights})
+        data = pl.DataFrame({"y": y, "x": x, "w": weights})
 
         result = rs.glm_dict(
-            response='y', terms={'x': {'type': 'linear'}},
-            data=data, weights='w',
+            response="y",
+            terms={"x": {"type": "linear"}},
+            data=data,
+            weights="w",
         ).fit()
 
         assert result.converged
@@ -259,6 +282,7 @@ class TestDictFitting:
 # =============================================================================
 # Mirrors: test_formula_glm.py → TestGLMModel
 # =============================================================================
+
 
 class TestDictModel:
     """Test GLMModel attributes and methods (mirrors TestGLMModel)."""
@@ -269,17 +293,19 @@ class TestDictModel:
         n = 100
         x = np.random.uniform(0, 10, n)
         y = 2 + 3 * x + np.random.normal(0, 1, n)
-        data = pl.DataFrame({'y': y, 'x': x})
+        data = pl.DataFrame({"y": y, "x": x})
         return rs.glm_dict(
-            response='y', terms={'x': {'type': 'linear'}}, data=data,
+            response="y",
+            terms={"x": {"type": "linear"}},
+            data=data,
         ).fit()
 
     def test_params_shape(self, fitted_result):
         assert len(fitted_result.params) == 2
 
     def test_feature_names(self, fitted_result):
-        assert 'Intercept' in fitted_result.feature_names
-        assert 'x' in fitted_result.feature_names
+        assert "Intercept" in fitted_result.feature_names
+        assert "x" in fitted_result.feature_names
 
     def test_fittedvalues_shape(self, fitted_result):
         assert len(fitted_result.fittedvalues) == 100
@@ -314,20 +340,21 @@ class TestDictModel:
     def test_significance_codes(self, fitted_result):
         codes = fitted_result.significance_codes()
         assert len(codes) == 2
-        valid_codes = ['***', '**', '*', '.', '']
+        valid_codes = ["***", "**", "*", ".", ""]
         for code in codes:
             assert code in valid_codes
 
     def test_summary(self, fitted_result):
         summary = fitted_result.summary()
         assert isinstance(summary, str)
-        assert 'Intercept' in summary
-        assert 'x' in summary
+        assert "Intercept" in summary
+        assert "x" in summary
 
 
 # =============================================================================
 # Mirrors: test_formula_glm.py → TestRobustStandardErrors
 # =============================================================================
+
 
 class TestDictRobustSE:
     """Test robust standard errors (mirrors TestRobustStandardErrors)."""
@@ -338,9 +365,11 @@ class TestDictRobustSE:
         n = 200
         x = np.random.uniform(1, 10, n)
         y = 2 + 3 * x + np.random.normal(0, x, n)
-        data = pl.DataFrame({'y': y, 'x': x})
+        data = pl.DataFrame({"y": y, "x": x})
         return rs.glm_dict(
-            response='y', terms={'x': {'type': 'linear'}}, data=data,
+            response="y",
+            terms={"x": {"type": "linear"}},
+            data=data,
         ).fit(store_design_matrix=True)
 
     def test_bse_robust_hc1(self, heteroscedastic_result):
@@ -384,6 +413,7 @@ class TestDictRobustSE:
 # Mirrors: test_formula_glm.py → TestResiduals
 # =============================================================================
 
+
 class TestDictResiduals:
     """Test residual methods (mirrors TestResiduals)."""
 
@@ -393,9 +423,11 @@ class TestDictResiduals:
         n = 100
         x = np.random.uniform(0, 10, n)
         y = 2 + 3 * x + np.random.normal(0, 2, n)
-        data = pl.DataFrame({'y': y, 'x': x})
+        data = pl.DataFrame({"y": y, "x": x})
         return rs.glm_dict(
-            response='y', terms={'x': {'type': 'linear'}}, data=data,
+            response="y",
+            terms={"x": {"type": "linear"}},
+            data=data,
         ).fit()
 
     def test_resid_response(self, fitted_result):
@@ -418,6 +450,7 @@ class TestDictResiduals:
 # Mirrors: test_formula_glm.py → TestRegularization
 # =============================================================================
 
+
 class TestDictRegularization:
     """Test regularization options (mirrors TestRegularization)."""
 
@@ -425,19 +458,22 @@ class TestDictRegularization:
     def sample_data(self):
         np.random.seed(42)
         n = 200
-        data = {'y': np.random.poisson(2, n)}
+        data = {"y": np.random.poisson(2, n)}
         for i in range(10):
-            data[f'x{i}'] = np.random.uniform(0, 10, n)
-        data['exposure'] = np.ones(n)
+            data[f"x{i}"] = np.random.uniform(0, 10, n)
+        data["exposure"] = np.ones(n)
         return pl.DataFrame(data)
 
     def _terms_x(self, n):
-        return {f'x{i}': {'type': 'linear'} for i in range(n)}
+        return {f"x{i}": {"type": "linear"} for i in range(n)}
 
     def test_ridge_regularization(self, sample_data):
         result = rs.glm_dict(
-            response='y', terms=self._terms_x(10),
-            data=sample_data, family='poisson', offset='exposure',
+            response="y",
+            terms=self._terms_x(10),
+            data=sample_data,
+            family="poisson",
+            offset="exposure",
         ).fit(alpha=0.1, l1_ratio=0.0)
 
         assert result.converged
@@ -445,8 +481,11 @@ class TestDictRegularization:
 
     def test_lasso_regularization(self, sample_data):
         result = rs.glm_dict(
-            response='y', terms=self._terms_x(10),
-            data=sample_data, family='poisson', offset='exposure',
+            response="y",
+            terms=self._terms_x(10),
+            data=sample_data,
+            family="poisson",
+            offset="exposure",
         ).fit(alpha=0.1, l1_ratio=1.0)
 
         assert result.converged
@@ -454,8 +493,11 @@ class TestDictRegularization:
 
     def test_elastic_net_regularization(self, sample_data):
         result = rs.glm_dict(
-            response='y', terms=self._terms_x(10),
-            data=sample_data, family='poisson', offset='exposure',
+            response="y",
+            terms=self._terms_x(10),
+            data=sample_data,
+            family="poisson",
+            offset="exposure",
         ).fit(alpha=0.1, l1_ratio=0.5)
 
         assert result.converged
@@ -463,8 +505,11 @@ class TestDictRegularization:
 
     def test_no_regularization(self, sample_data):
         result = rs.glm_dict(
-            response='y', terms={'x0': {'type': 'linear'}, 'x1': {'type': 'linear'}},
-            data=sample_data, family='poisson', offset='exposure',
+            response="y",
+            terms={"x0": {"type": "linear"}, "x1": {"type": "linear"}},
+            data=sample_data,
+            family="poisson",
+            offset="exposure",
         ).fit(alpha=0.0)
 
         assert result.converged
@@ -475,6 +520,7 @@ class TestDictRegularization:
 # Mirrors: test_formula_glm.py → TestPrediction
 # =============================================================================
 
+
 class TestDictPrediction:
     """Test prediction functionality (mirrors TestPrediction)."""
 
@@ -483,10 +529,12 @@ class TestDictPrediction:
         n = 100
         x = np.random.uniform(0, 10, n)
         y = 2 + 3 * x + np.random.normal(0, 1, n)
-        data = pl.DataFrame({'y': y, 'x': x})
+        data = pl.DataFrame({"y": y, "x": x})
 
         result = rs.glm_dict(
-            response='y', terms={'x': {'type': 'linear'}}, data=data,
+            response="y",
+            terms={"x": {"type": "linear"}},
+            data=data,
         ).fit()
         predictions = result.fittedvalues
 
@@ -498,14 +546,16 @@ class TestDictPrediction:
         n = 100
         x = np.random.uniform(0, 10, n)
         y = 2 + 3 * x + np.random.normal(0, 1, n)
-        train_data = pl.DataFrame({'y': y, 'x': x})
+        train_data = pl.DataFrame({"y": y, "x": x})
 
         result = rs.glm_dict(
-            response='y', terms={'x': {'type': 'linear'}}, data=train_data,
+            response="y",
+            terms={"x": {"type": "linear"}},
+            data=train_data,
         ).fit()
 
         new_x = np.array([1.0, 5.0, 9.0])
-        new_data = pl.DataFrame({'x': new_x})
+        new_data = pl.DataFrame({"x": new_x})
 
         predictions = result.predict(new_data)
 
@@ -518,15 +568,18 @@ class TestDictPrediction:
 # Mirrors: test_formula_glm.py → TestEdgeCases
 # =============================================================================
 
+
 class TestDictEdgeCases:
     """Test edge cases (mirrors TestEdgeCases)."""
 
     def test_intercept_only_model(self):
         np.random.seed(42)
-        data = pl.DataFrame({'y': np.random.normal(5, 1, 100)})
+        data = pl.DataFrame({"y": np.random.normal(5, 1, 100)})
 
         result = rs.glm_dict(
-            response='y', terms={}, data=data,
+            response="y",
+            terms={},
+            data=data,
         ).fit()
 
         assert result.converged
@@ -537,34 +590,41 @@ class TestDictEdgeCases:
         np.random.seed(42)
         x = np.random.uniform(1, 10, 100)
         y = 3 * x + np.random.normal(0, 1, 100)
-        data = pl.DataFrame({'y': y, 'x': x})
+        data = pl.DataFrame({"y": y, "x": x})
 
         result = rs.glm_dict(
-            response='y', terms={'x': {'type': 'linear'}},
-            data=data, intercept=False,
+            response="y",
+            terms={"x": {"type": "linear"}},
+            data=data,
+            intercept=False,
         ).fit()
 
         assert result.converged
-        assert 'Intercept' not in result.feature_names
+        assert "Intercept" not in result.feature_names
 
     def test_single_observation_fails(self):
-        data = pl.DataFrame({'y': [1.0], 'x': [1.0]})
-        with pytest.raises(Exception):
+        data = pl.DataFrame({"y": [1.0], "x": [1.0]})
+        with pytest.raises(rs.exceptions.ValidationError):
             rs.glm_dict(
-                response='y', terms={'x': {'type': 'linear'}}, data=data,
+                response="y",
+                terms={"x": {"type": "linear"}},
+                data=data,
             ).fit()
 
     def test_missing_variable_fails(self):
-        data = pl.DataFrame({'y': [1.0, 2.0], 'x': [1.0, 2.0]})
+        data = pl.DataFrame({"y": [1.0, 2.0], "x": [1.0, 2.0]})
         with pytest.raises((KeyError, Exception)):
             rs.glm_dict(
-                response='y', terms={'z': {'type': 'linear'}}, data=data,
+                response="y",
+                terms={"z": {"type": "linear"}},
+                data=data,
             ).fit()
 
 
 # =============================================================================
 # Mirrors: test_serialization.py
 # =============================================================================
+
 
 class TestDictSerialization:
     """Test serialization roundtrip (mirrors TestBasicSerialization)."""
@@ -573,18 +633,22 @@ class TestDictSerialization:
     def sample_data(self):
         np.random.seed(42)
         n = 500
-        return pl.DataFrame({
-            "y": np.random.poisson(2, n).astype(float),
-            "x1": np.random.randn(n),
-            "x2": np.random.randn(n),
-            "cat": np.random.choice(["A", "B", "C"], n),
-            "exposure": np.random.uniform(0.5, 2.0, n),
-        })
+        return pl.DataFrame(
+            {
+                "y": np.random.poisson(2, n).astype(float),
+                "x1": np.random.randn(n),
+                "x2": np.random.randn(n),
+                "cat": np.random.choice(["A", "B", "C"], n),
+                "exposure": np.random.uniform(0.5, 2.0, n),
+            }
+        )
 
     def test_simple_model_roundtrip(self, sample_data):
         result = rs.glm_dict(
-            response="y", terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=sample_data, family="poisson",
+            response="y",
+            terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
+            data=sample_data,
+            family="poisson",
         ).fit()
 
         model_bytes = result.to_bytes()
@@ -602,7 +666,8 @@ class TestDictSerialization:
         result = rs.glm_dict(
             response="y",
             terms={"x1": {"type": "linear"}, "cat": {"type": "categorical"}},
-            data=sample_data, family="poisson",
+            data=sample_data,
+            family="poisson",
         ).fit()
 
         model_bytes = result.to_bytes()
@@ -615,7 +680,9 @@ class TestDictSerialization:
         result = rs.glm_dict(
             response="y",
             terms={"x1": {"type": "linear"}, "cat": {"type": "categorical"}},
-            data=sample_data, family="poisson", offset="exposure",
+            data=sample_data,
+            family="poisson",
+            offset="exposure",
         ).fit()
 
         model_bytes = result.to_bytes()
@@ -631,13 +698,15 @@ class TestDictSerializationPrediction:
     def sample_data(self):
         np.random.seed(42)
         n = 500
-        return pl.DataFrame({
-            "y": np.random.poisson(2, n).astype(float),
-            "x1": np.random.randn(n),
-            "x2": np.random.randn(n),
-            "cat": np.random.choice(["A", "B", "C"], n),
-            "exposure": np.random.uniform(0.5, 2.0, n),
-        })
+        return pl.DataFrame(
+            {
+                "y": np.random.poisson(2, n).astype(float),
+                "x1": np.random.randn(n),
+                "x2": np.random.randn(n),
+                "cat": np.random.choice(["A", "B", "C"], n),
+                "exposure": np.random.uniform(0.5, 2.0, n),
+            }
+        )
 
     def test_predict_after_load(self, sample_data):
         train = sample_data.head(400)
@@ -645,8 +714,13 @@ class TestDictSerializationPrediction:
 
         result = rs.glm_dict(
             response="y",
-            terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}, "cat": {"type": "categorical"}},
-            data=train, family="poisson",
+            terms={
+                "x1": {"type": "linear"},
+                "x2": {"type": "linear"},
+                "cat": {"type": "categorical"},
+            },
+            data=train,
+            family="poisson",
         ).fit()
         original_pred = result.predict(test)
 
@@ -662,7 +736,9 @@ class TestDictSerializationPrediction:
         result = rs.glm_dict(
             response="y",
             terms={"x1": {"type": "linear"}, "cat": {"type": "categorical"}},
-            data=train, family="poisson", offset="exposure",
+            data=train,
+            family="poisson",
+            offset="exposure",
         ).fit()
         original_pred = result.predict(test)
 
@@ -679,19 +755,22 @@ class TestDictSplineSerialization:
     def sample_data(self):
         np.random.seed(42)
         n = 500
-        return pl.DataFrame({
-            "y": np.random.poisson(2, n).astype(float),
-            "x1": np.random.randn(n),
-            "x2": np.random.randn(n),
-            "cat": np.random.choice(["A", "B", "C"], n),
-            "exposure": np.random.uniform(0.5, 2.0, n),
-        })
+        return pl.DataFrame(
+            {
+                "y": np.random.poisson(2, n).astype(float),
+                "x1": np.random.randn(n),
+                "x2": np.random.randn(n),
+                "cat": np.random.choice(["A", "B", "C"], n),
+                "exposure": np.random.uniform(0.5, 2.0, n),
+            }
+        )
 
     def test_spline_model_roundtrip(self, sample_data):
         result = rs.glm_dict(
             response="y",
             terms={"x1": {"type": "bs", "df": 4}, "x2": {"type": "linear"}},
-            data=sample_data, family="poisson",
+            data=sample_data,
+            family="poisson",
         ).fit()
 
         model_bytes = result.to_bytes()
@@ -706,7 +785,8 @@ class TestDictSplineSerialization:
         result = rs.glm_dict(
             response="y",
             terms={"x1": {"type": "bs", "df": 4}, "cat": {"type": "categorical"}},
-            data=train, family="poisson",
+            data=train,
+            family="poisson",
         ).fit()
         original_pred = result.predict(test)
 
@@ -723,13 +803,15 @@ class TestDictInteractionSerialization:
     def sample_data(self):
         np.random.seed(42)
         n = 500
-        return pl.DataFrame({
-            "y": np.random.poisson(2, n).astype(float),
-            "x1": np.random.randn(n),
-            "x2": np.random.randn(n),
-            "cat": np.random.choice(["A", "B", "C"], n),
-            "exposure": np.random.uniform(0.5, 2.0, n),
-        })
+        return pl.DataFrame(
+            {
+                "y": np.random.poisson(2, n).astype(float),
+                "x1": np.random.randn(n),
+                "x2": np.random.randn(n),
+                "cat": np.random.choice(["A", "B", "C"], n),
+                "exposure": np.random.uniform(0.5, 2.0, n),
+            }
+        )
 
     def test_interaction_model_roundtrip(self, sample_data):
         result = rs.glm_dict(
@@ -738,7 +820,8 @@ class TestDictInteractionSerialization:
             interactions=[
                 {"x1": {"type": "linear"}, "x2": {"type": "linear"}, "include_main": False},
             ],
-            data=sample_data, family="poisson",
+            data=sample_data,
+            family="poisson",
         ).fit()
 
         model_bytes = result.to_bytes()
@@ -756,7 +839,8 @@ class TestDictInteractionSerialization:
             interactions=[
                 {"cat": {"type": "categorical"}, "x1": {"type": "linear"}, "include_main": False},
             ],
-            data=train, family="poisson",
+            data=train,
+            family="poisson",
         ).fit()
         original_pred = result.predict(test)
 
@@ -773,19 +857,26 @@ class TestDictSerializationProperties:
     def sample_data(self):
         np.random.seed(42)
         n = 500
-        return pl.DataFrame({
-            "y": np.random.poisson(2, n).astype(float),
-            "x1": np.random.randn(n),
-            "x2": np.random.randn(n),
-            "cat": np.random.choice(["A", "B", "C"], n),
-            "exposure": np.random.uniform(0.5, 2.0, n),
-        })
+        return pl.DataFrame(
+            {
+                "y": np.random.poisson(2, n).astype(float),
+                "x1": np.random.randn(n),
+                "x2": np.random.randn(n),
+                "cat": np.random.choice(["A", "B", "C"], n),
+                "exposure": np.random.uniform(0.5, 2.0, n),
+            }
+        )
 
     def test_properties_preserved(self, sample_data):
         result = rs.glm_dict(
             response="y",
-            terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}, "cat": {"type": "categorical"}},
-            data=sample_data, family="poisson",
+            terms={
+                "x1": {"type": "linear"},
+                "x2": {"type": "linear"},
+                "cat": {"type": "categorical"},
+            },
+            data=sample_data,
+            family="poisson",
         ).fit()
         loaded = rs.GLMModel.from_bytes(result.to_bytes())
 
@@ -802,7 +893,8 @@ class TestDictSerializationProperties:
             result = rs.glm_dict(
                 response="y",
                 terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-                data=data, family=family,
+                data=data,
+                family=family,
             ).fit()
             loaded = rs.GLMModel.from_bytes(result.to_bytes())
 
@@ -811,7 +903,10 @@ class TestDictSerializationProperties:
 
     def test_intercept_only_model(self, sample_data):
         result = rs.glm_dict(
-            response="y", terms={}, data=sample_data, family="poisson",
+            response="y",
+            terms={},
+            data=sample_data,
+            family="poisson",
         ).fit()
         loaded = rs.GLMModel.from_bytes(result.to_bytes())
 
@@ -822,6 +917,7 @@ class TestDictSerializationProperties:
 # Mirrors: test_interactions.py → TestGLMInteractions
 # =============================================================================
 
+
 class TestDictInteractions:
     """Test GLM fitting with interactions (mirrors TestGLMInteractions)."""
 
@@ -831,39 +927,48 @@ class TestDictInteractions:
         n = 1000
         age = np.random.uniform(20, 70, n)
         power = np.random.uniform(50, 200, n)
-        area = np.random.choice(['Urban', 'Suburban', 'Rural'], n)
+        area = np.random.choice(["Urban", "Suburban", "Rural"], n)
         log_rate = -3.0 + 0.02 * age + 0.01 * power - 0.0001 * age * power
-        log_rate += np.where(area == 'Urban', 0.3, np.where(area == 'Suburban', 0.1, 0.0))
+        log_rate += np.where(area == "Urban", 0.3, np.where(area == "Suburban", 0.1, 0.0))
         claims = np.random.poisson(np.exp(log_rate))
         exposure = np.random.uniform(0.5, 1.0, n)
-        return pl.DataFrame({
-            'claims': claims, 'age': age, 'power': power,
-            'area': area, 'exposure': exposure,
-        })
+        return pl.DataFrame(
+            {
+                "claims": claims,
+                "age": age,
+                "power": power,
+                "area": area,
+                "exposure": exposure,
+            }
+        )
 
     def test_fit_continuous_interaction(self, insurance_data):
         result = rs.glm_dict(
-            response='claims',
-            terms={'age': {'type': 'linear'}, 'power': {'type': 'linear'}},
+            response="claims",
+            terms={"age": {"type": "linear"}, "power": {"type": "linear"}},
             interactions=[
-                {'age': {'type': 'linear'}, 'power': {'type': 'linear'}, 'include_main': False},
+                {"age": {"type": "linear"}, "power": {"type": "linear"}, "include_main": False},
             ],
-            data=insurance_data, family='poisson', offset='exposure',
+            data=insurance_data,
+            family="poisson",
+            offset="exposure",
         ).fit()
 
         assert len(result.params) == 4  # Intercept, age, power, age:power
         assert result.converged
         summary = result.summary()
-        assert 'age:power' in summary
+        assert "age:power" in summary
 
     def test_fit_categorical_continuous_interaction(self, insurance_data):
         result = rs.glm_dict(
-            response='claims',
-            terms={'area': {'type': 'categorical'}, 'age': {'type': 'linear'}},
+            response="claims",
+            terms={"area": {"type": "categorical"}, "age": {"type": "linear"}},
             interactions=[
-                {'area': {'type': 'categorical'}, 'age': {'type': 'linear'}, 'include_main': False},
+                {"area": {"type": "categorical"}, "age": {"type": "linear"}, "include_main": False},
             ],
-            data=insurance_data, family='poisson', offset='exposure',
+            data=insurance_data,
+            family="poisson",
+            offset="exposure",
         ).fit()
 
         # Intercept + 2 area dummies + age + 2 interactions = 6
@@ -872,16 +977,22 @@ class TestDictInteractions:
 
     def test_fit_categorical_categorical_interaction(self, insurance_data):
         insurance_data = insurance_data.with_columns(
-            pl.Series('fuel', np.random.choice(['Petrol', 'Diesel'], len(insurance_data)))
+            pl.Series("fuel", np.random.choice(["Petrol", "Diesel"], len(insurance_data)))
         )
 
         result = rs.glm_dict(
-            response='claims',
-            terms={'area': {'type': 'categorical'}, 'fuel': {'type': 'categorical'}},
+            response="claims",
+            terms={"area": {"type": "categorical"}, "fuel": {"type": "categorical"}},
             interactions=[
-                {'area': {'type': 'categorical'}, 'fuel': {'type': 'categorical'}, 'include_main': False},
+                {
+                    "area": {"type": "categorical"},
+                    "fuel": {"type": "categorical"},
+                    "include_main": False,
+                },
             ],
-            data=insurance_data, family='poisson', offset='exposure',
+            data=insurance_data,
+            family="poisson",
+            offset="exposure",
         ).fit()
 
         # area: 2 dummies, fuel: 1 dummy, Total: 1 + 2 + 1 + 2×1 = 6
@@ -890,15 +1001,18 @@ class TestDictInteractions:
 
     def test_regularized_interaction_model(self, insurance_data):
         result = rs.glm_dict(
-            response='claims',
+            response="claims",
             terms={
-                'age': {'type': 'linear'}, 'power': {'type': 'linear'},
-                'area': {'type': 'categorical'},
+                "age": {"type": "linear"},
+                "power": {"type": "linear"},
+                "area": {"type": "categorical"},
             },
             interactions=[
-                {'age': {'type': 'linear'}, 'power': {'type': 'linear'}, 'include_main': False},
+                {"age": {"type": "linear"}, "power": {"type": "linear"}, "include_main": False},
             ],
-            data=insurance_data, family='poisson', offset='exposure',
+            data=insurance_data,
+            family="poisson",
+            offset="exposure",
         ).fit(alpha=0.1, l1_ratio=0.0)
 
         assert result.is_regularized
@@ -906,12 +1020,14 @@ class TestDictInteractions:
 
     def test_predictions_with_interactions(self, insurance_data):
         result = rs.glm_dict(
-            response='claims',
-            terms={'age': {'type': 'linear'}, 'power': {'type': 'linear'}},
+            response="claims",
+            terms={"age": {"type": "linear"}, "power": {"type": "linear"}},
             interactions=[
-                {'age': {'type': 'linear'}, 'power': {'type': 'linear'}, 'include_main': False},
+                {"age": {"type": "linear"}, "power": {"type": "linear"}, "include_main": False},
             ],
-            data=insurance_data, family='poisson', offset='exposure',
+            data=insurance_data,
+            family="poisson",
+            offset="exposure",
         ).fit()
 
         fv = result.fittedvalues
@@ -921,22 +1037,31 @@ class TestDictInteractions:
     def test_large_categorical_interaction(self):
         np.random.seed(42)
         n = 50_000
-        df = pl.DataFrame({
-            'y': np.random.poisson(1, n),
-            'cat1': np.random.choice([f'A{i}' for i in range(10)], n),
-            'cat2': np.random.choice([f'B{i}' for i in range(8)], n),
-            'exposure': np.random.uniform(0.5, 1.0, n),
-        })
+        df = pl.DataFrame(
+            {
+                "y": np.random.poisson(1, n),
+                "cat1": np.random.choice([f"A{i}" for i in range(10)], n),
+                "cat2": np.random.choice([f"B{i}" for i in range(8)], n),
+                "exposure": np.random.uniform(0.5, 1.0, n),
+            }
+        )
 
         import time
+
         t0 = time.time()
         result = rs.glm_dict(
-            response='y',
-            terms={'cat1': {'type': 'categorical'}, 'cat2': {'type': 'categorical'}},
+            response="y",
+            terms={"cat1": {"type": "categorical"}, "cat2": {"type": "categorical"}},
             interactions=[
-                {'cat1': {'type': 'categorical'}, 'cat2': {'type': 'categorical'}, 'include_main': False},
+                {
+                    "cat1": {"type": "categorical"},
+                    "cat2": {"type": "categorical"},
+                    "include_main": False,
+                },
             ],
-            data=df, family='poisson', offset='exposure',
+            data=df,
+            family="poisson",
+            offset="exposure",
         ).fit()
         t_opt = time.time() - t0
 
@@ -947,20 +1072,24 @@ class TestDictInteractions:
 
     def test_fit_specific_levels_categorical(self):
         np.random.seed(42)
-        data = pl.DataFrame({
-            'claims': np.random.poisson(0.1, 100),
-            'Region': np.random.choice(['Paris', 'Lyon', 'Marseille'], 100),
-            'age': np.random.uniform(20, 60, 100),
-            'exposure': np.random.uniform(0.5, 1.5, 100),
-        })
+        data = pl.DataFrame(
+            {
+                "claims": np.random.poisson(0.1, 100),
+                "Region": np.random.choice(["Paris", "Lyon", "Marseille"], 100),
+                "age": np.random.uniform(20, 60, 100),
+                "exposure": np.random.uniform(0.5, 1.5, 100),
+            }
+        )
 
         result = rs.glm_dict(
-            response='claims',
+            response="claims",
             terms={
-                'Region': {'type': 'categorical', 'levels': ['Paris']},
-                'age': {'type': 'linear'},
+                "Region": {"type": "categorical", "levels": ["Paris"]},
+                "age": {"type": "linear"},
             },
-            data=data, family='poisson', offset='exposure',
+            data=data,
+            family="poisson",
+            offset="exposure",
         ).fit()
 
         assert result.converged
@@ -971,6 +1100,54 @@ class TestDictInteractions:
 # =============================================================================
 # Mirrors: test_regularization_path.py → TestCVRegularizationFit
 # =============================================================================
+
+
+class TestDictCVPathNonLogLink:
+    """Regression tests for CV path with non-log link functions (Phase 1 fix)."""
+
+    def test_cv_path_gamma_identity_link(self):
+        """CV path must use the link inverse, not hardcoded exp()."""
+        np.random.seed(42)
+        n = 300
+        x = np.random.uniform(1, 5, n)
+        mu = 2.0 + 0.5 * x  # identity link: mu = eta
+        y = np.random.gamma(5, mu / 5, n)
+        data = pl.DataFrame({"y": y, "x": x})
+
+        model = rs.glm_dict(
+            response="y",
+            terms={"x": {"type": "linear"}},
+            data=data,
+            family="gamma",
+            link="identity",
+        )
+        result = model.fit(cv=3, regularization="ridge", n_alphas=5, verbose=False)
+
+        assert result.cv_deviance is not None
+        assert np.isfinite(result.cv_deviance)
+        assert result.converged
+
+    def test_cv_path_binomial_logit_link(self):
+        """CV path must use logit inverse (sigmoid), not exp()."""
+        np.random.seed(42)
+        n = 500
+        x = np.random.uniform(-2, 2, n)
+        p = 1 / (1 + np.exp(-(0.5 + x)))
+        y = np.random.binomial(1, p).astype(float)
+        data = pl.DataFrame({"y": y, "x": x})
+
+        model = rs.glm_dict(
+            response="y",
+            terms={"x": {"type": "linear"}},
+            data=data,
+            family="binomial",
+        )
+        result = model.fit(cv=3, regularization="ridge", n_alphas=5, verbose=False)
+
+        assert result.cv_deviance is not None
+        assert np.isfinite(result.cv_deviance)
+        assert result.converged
+
 
 class TestDictCVRegularization:
     """Test CV-based regularization (mirrors TestCVRegularizationFit)."""
@@ -995,15 +1172,21 @@ class TestDictCVRegularization:
         exposure = np.random.uniform(0.1, 1.0, n)
         eta = -2.0 + 0.01 * age + 0.005 * bonus_malus
         claims = np.random.poisson(np.exp(eta) * exposure)
-        return pl.DataFrame({
-            "ClaimCount": claims, "Age": age, "BonusMalus": bonus_malus, "Exposure": exposure,
-        })
+        return pl.DataFrame(
+            {
+                "ClaimCount": claims,
+                "Age": age,
+                "BonusMalus": bonus_malus,
+                "Exposure": exposure,
+            }
+        )
 
     def test_ridge_cv_basic(self, simple_data):
         model = rs.glm_dict(
             response="y",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}, "x3": {"type": "linear"}},
-            data=simple_data, family="poisson",
+            data=simple_data,
+            family="poisson",
         )
         result = model.fit(cv=3, regularization="ridge", n_alphas=10, verbose=False)
 
@@ -1016,7 +1199,8 @@ class TestDictCVRegularization:
         model = rs.glm_dict(
             response="y",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}, "x3": {"type": "linear"}},
-            data=simple_data, family="poisson",
+            data=simple_data,
+            family="poisson",
         )
         result = model.fit(cv=3, regularization="lasso", n_alphas=10, verbose=False)
 
@@ -1027,15 +1211,24 @@ class TestDictCVRegularization:
         model = rs.glm_dict(
             response="y",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}, "x3": {"type": "linear"}},
-            data=simple_data, family="poisson",
+            data=simple_data,
+            family="poisson",
         )
         result_min = model.fit(
-            cv=3, regularization="ridge", n_alphas=20,
-            selection="min", cv_seed=42, verbose=False,
+            cv=3,
+            regularization="ridge",
+            n_alphas=20,
+            selection="min",
+            cv_seed=42,
+            verbose=False,
         )
         result_1se = model.fit(
-            cv=3, regularization="ridge", n_alphas=20,
-            selection="1se", cv_seed=42, verbose=False,
+            cv=3,
+            regularization="ridge",
+            n_alphas=20,
+            selection="1se",
+            cv_seed=42,
+            verbose=False,
         )
         assert result_1se.alpha >= result_min.alpha
 
@@ -1043,7 +1236,8 @@ class TestDictCVRegularization:
         model = rs.glm_dict(
             response="y",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=simple_data, family="poisson",
+            data=simple_data,
+            family="poisson",
         )
         with pytest.raises(rs.ValidationError, match="regularization"):
             model.fit(cv=5)
@@ -1052,7 +1246,8 @@ class TestDictCVRegularization:
         model = rs.glm_dict(
             response="y",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=simple_data, family="poisson",
+            data=simple_data,
+            family="poisson",
         )
         result = model.fit(alpha=0.1, l1_ratio=0.0)
         assert result.alpha == pytest.approx(0.1)
@@ -1062,7 +1257,9 @@ class TestDictCVRegularization:
         model = rs.glm_dict(
             response="ClaimCount",
             terms={"Age": {"type": "linear"}, "BonusMalus": {"type": "linear"}},
-            data=insurance_like_data, family="poisson", offset="Exposure",
+            data=insurance_like_data,
+            family="poisson",
+            offset="Exposure",
         )
         result = model.fit(cv=3, regularization="ridge", n_alphas=10, verbose=False)
 
@@ -1073,7 +1270,9 @@ class TestDictCVRegularization:
         model = rs.glm_dict(
             response="ClaimCount",
             terms={"Age": {"type": "linear"}, "BonusMalus": {"type": "linear"}},
-            data=insurance_like_data, family="poisson", offset="Exposure",
+            data=insurance_like_data,
+            family="poisson",
+            offset="Exposure",
         )
         result1 = model.fit(cv=3, regularization="ridge", n_alphas=10, cv_seed=42, verbose=False)
         result2 = model.fit(cv=3, regularization="ridge", n_alphas=10, cv_seed=42, verbose=False)
@@ -1085,7 +1284,8 @@ class TestDictCVRegularization:
         model = rs.glm_dict(
             response="y",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=simple_data, family="poisson",
+            data=simple_data,
+            family="poisson",
         )
         result = model.fit(cv=3, regularization="ridge", n_alphas=10, verbose=False)
 
@@ -1100,7 +1300,8 @@ class TestDictCVRegularization:
         model = rs.glm_dict(
             response="y",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=simple_data, family="poisson",
+            data=simple_data,
+            family="poisson",
         )
         result = model.fit(cv=3, regularization="ridge", n_alphas=10, verbose=False)
         path = result.regularization_path
@@ -1119,6 +1320,7 @@ class TestDictCVRegularization:
 #          TestPreFitExploration, TestEnhancedDiagnostics, TestScoreTest
 # =============================================================================
 
+
 class TestDictDiagnostics:
     """Test diagnostics (mirrors TestModelDiagnostics)."""
 
@@ -1135,18 +1337,22 @@ class TestDictDiagnostics:
         result = rs.glm_dict(
             response="y",
             terms={"age": {"type": "linear"}, "region": {"type": "categorical"}},
-            data=data, family="poisson",
+            data=data,
+            family="poisson",
         ).fit()
 
         return result, data
 
     def test_compute_diagnostics(self, fitted_model):
         from rustystats.diagnostics import compute_diagnostics
+
         result, data = fitted_model
 
         diagnostics = compute_diagnostics(
-            result=result, train_data=data,
-            categorical_factors=["region"], continuous_factors=["age"],
+            result=result,
+            train_data=data,
+            categorical_factors=["region"],
+            continuous_factors=["age"],
         )
 
         assert diagnostics.model_summary is not None
@@ -1156,13 +1362,17 @@ class TestDictDiagnostics:
         assert len(diagnostics.factors) == 2
 
     def test_diagnostics_to_json(self, fitted_model):
-        from rustystats.diagnostics import compute_diagnostics
         import json
+
+        from rustystats.diagnostics import compute_diagnostics
+
         result, data = fitted_model
 
         diagnostics = compute_diagnostics(
-            result=result, train_data=data,
-            categorical_factors=["region"], continuous_factors=["age"],
+            result=result,
+            train_data=data,
+            categorical_factors=["region"],
+            continuous_factors=["age"],
         )
 
         json_str = diagnostics.to_json()
@@ -1177,16 +1387,20 @@ class TestDictDiagnostics:
         result, data = fitted_model
         diagnostics = result.diagnostics(
             train_data=data,
-            categorical_factors=["region"], continuous_factors=["age"],
+            categorical_factors=["region"],
+            continuous_factors=["age"],
         )
         assert diagnostics is not None
         assert len(diagnostics.factors) == 2
 
     def test_diagnostics_json_method(self, fitted_model):
         import json
+
         result, data = fitted_model
         json_str = result.diagnostics_json(
-            train_data=data, categorical_factors=["region"], continuous_factors=["age"],
+            train_data=data,
+            categorical_factors=["region"],
+            continuous_factors=["age"],
         )
         parsed = json.loads(json_str)
         assert "model_summary" in parsed
@@ -1197,6 +1411,7 @@ class TestDictDiagnosticsFamilies:
 
     def test_gaussian_diagnostics(self):
         from rustystats.diagnostics import compute_diagnostics
+
         np.random.seed(42)
         n = 300
         x = np.random.randn(n)
@@ -1204,8 +1419,10 @@ class TestDictDiagnosticsFamilies:
         data = pl.DataFrame({"y": y, "x": x})
 
         result = rs.glm_dict(
-            response="y", terms={"x": {"type": "linear"}},
-            data=data, family="gaussian",
+            response="y",
+            terms={"x": {"type": "linear"}},
+            data=data,
+            family="gaussian",
         ).fit()
 
         diag = compute_diagnostics(result=result, train_data=data, continuous_factors=["x"])
@@ -1214,6 +1431,7 @@ class TestDictDiagnosticsFamilies:
 
     def test_binomial_diagnostics(self):
         from rustystats.diagnostics import compute_diagnostics
+
         np.random.seed(42)
         n = 300
         x = np.random.randn(n)
@@ -1222,8 +1440,10 @@ class TestDictDiagnosticsFamilies:
         data = pl.DataFrame({"y": y, "x": x})
 
         result = rs.glm_dict(
-            response="y", terms={"x": {"type": "linear"}},
-            data=data, family="binomial",
+            response="y",
+            terms={"x": {"type": "linear"}},
+            data=data,
+            family="binomial",
         ).fit()
 
         diag = compute_diagnostics(result=result, train_data=data, continuous_factors=["x"])
@@ -1246,18 +1466,26 @@ class TestDictEnhancedDiagnostics:
         mu_true = np.exp(-2 + 0.02 * age + 0.001 * veh_power + 0.3 * (region == "A").astype(float))
         y = np.random.poisson(mu_true * exposure)
 
-        data = pl.DataFrame({
-            "y": y, "age": age, "veh_power": veh_power,
-            "region": region, "exposure": exposure,
-        })
+        data = pl.DataFrame(
+            {
+                "y": y,
+                "age": age,
+                "veh_power": veh_power,
+                "region": region,
+                "exposure": exposure,
+            }
+        )
 
         result = rs.glm_dict(
             response="y",
             terms={
-                "age": {"type": "linear"}, "veh_power": {"type": "linear"},
+                "age": {"type": "linear"},
+                "veh_power": {"type": "linear"},
                 "region": {"type": "categorical"},
             },
-            data=data, family="poisson", offset="exposure",
+            data=data,
+            family="poisson",
+            offset="exposure",
         ).fit()
 
         return result, data
@@ -1282,10 +1510,13 @@ class TestDictEnhancedDiagnostics:
 
     def test_diagnostics_json_includes_enhancements(self, fitted_model_with_data):
         import json
+
         result, data = fitted_model_with_data
 
         diagnostics = result.diagnostics(
-            train_data=data, categorical_factors=["region"], continuous_factors=["age"],
+            train_data=data,
+            categorical_factors=["region"],
+            continuous_factors=["age"],
         )
 
         json_str = diagnostics.to_json()
@@ -1307,7 +1538,8 @@ class TestDictEnhancedDiagnostics:
         result = rs.glm_dict(
             response="y",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=data, family="poisson",
+            data=data,
+            family="poisson",
         ).fit()
 
         diagnostics = result.diagnostics(train_data=data, continuous_factors=["x1", "x2"])
@@ -1315,7 +1547,7 @@ class TestDictEnhancedDiagnostics:
         assert diagnostics.vif is not None
         assert len(diagnostics.vif) > 0
         for v in diagnostics.vif:
-            assert v.severity in ('severe', 'moderate')
+            assert v.severity in ("severe", "moderate")
 
     def test_train_test_comparison(self, fitted_model_with_data):
         result, train_data = fitted_model_with_data
@@ -1329,14 +1561,21 @@ class TestDictEnhancedDiagnostics:
         mu_true = np.exp(-2 + 0.02 * age + 0.001 * veh_power + 0.3 * (region == "A").astype(float))
         y = np.random.poisson(mu_true * exposure)
 
-        test_data = pl.DataFrame({
-            "y": y, "age": age, "veh_power": veh_power,
-            "region": region, "exposure": exposure,
-        })
+        test_data = pl.DataFrame(
+            {
+                "y": y,
+                "age": age,
+                "veh_power": veh_power,
+                "region": region,
+                "exposure": exposure,
+            }
+        )
 
         diagnostics = result.diagnostics(
-            train_data=train_data, test_data=test_data,
-            categorical_factors=["region"], continuous_factors=["age", "veh_power"],
+            train_data=train_data,
+            test_data=test_data,
+            categorical_factors=["region"],
+            continuous_factors=["age", "veh_power"],
         )
 
         tt = diagnostics.train_test
@@ -1344,8 +1583,8 @@ class TestDictEnhancedDiagnostics:
         assert tt.test is not None
         assert tt.train.dataset == "train"
         assert tt.test.dataset == "test"
-        assert hasattr(tt, 'gini_gap')
-        assert hasattr(tt, 'overfitting_risk')
+        assert hasattr(tt, "gini_gap")
+        assert hasattr(tt, "overfitting_risk")
         assert len(tt.decile_comparison) == 10
 
     def test_score_test_in_factor_diagnostics(self):
@@ -1358,15 +1597,21 @@ class TestDictEnhancedDiagnostics:
         mu_true = np.exp(-1 + 0.02 * age + 0.3 * (region == "A").astype(float))
         y = np.random.poisson(mu_true)
 
-        data = pl.DataFrame({
-            "y": y, "age": age, "region": region,
-            "unfitted_var": unfitted_var, "unfitted_cat": unfitted_cat,
-        })
+        data = pl.DataFrame(
+            {
+                "y": y,
+                "age": age,
+                "region": region,
+                "unfitted_var": unfitted_var,
+                "unfitted_cat": unfitted_cat,
+            }
+        )
 
         result = rs.glm_dict(
             response="y",
             terms={"age": {"type": "linear"}, "region": {"type": "categorical"}},
-            data=data, family="poisson",
+            data=data,
+            family="poisson",
         ).fit()
 
         diagnostics = result.diagnostics(
@@ -1384,20 +1629,25 @@ class TestDictEnhancedDiagnostics:
 # Mirrors: test_splines.py → TestSplineFormula, TestMonotonicSplineFormula
 # =============================================================================
 
+
 class TestDictSplineFormula:
     """Test splines via dict API (mirrors TestSplineFormula)."""
 
     def test_dict_with_bs(self):
         np.random.seed(42)
         n = 100
-        data = pl.DataFrame({
-            "y": np.random.poisson(3, n),
-            "age": np.random.uniform(20, 70, n),
-        })
+        data = pl.DataFrame(
+            {
+                "y": np.random.poisson(3, n),
+                "age": np.random.uniform(20, 70, n),
+            }
+        )
 
         result = rs.glm_dict(
-            response="y", terms={"age": {"type": "bs", "df": 5}},
-            data=data, family="poisson",
+            response="y",
+            terms={"age": {"type": "bs", "df": 5}},
+            data=data,
+            family="poisson",
         ).fit()
 
         assert len(result.params) >= 2
@@ -1405,14 +1655,18 @@ class TestDictSplineFormula:
     def test_dict_with_ns(self):
         np.random.seed(42)
         n = 100
-        data = pl.DataFrame({
-            "y": np.random.normal(0, 1, n),
-            "x": np.random.uniform(0, 10, n),
-        })
+        data = pl.DataFrame(
+            {
+                "y": np.random.normal(0, 1, n),
+                "x": np.random.uniform(0, 10, n),
+            }
+        )
 
         result = rs.glm_dict(
-            response="y", terms={"x": {"type": "ns", "df": 4}},
-            data=data, family="gaussian",
+            response="y",
+            terms={"x": {"type": "ns", "df": 4}},
+            data=data,
+            family="gaussian",
         ).fit()
 
         assert result.converged
@@ -1421,16 +1675,19 @@ class TestDictSplineFormula:
     def test_dict_spline_with_categorical(self):
         np.random.seed(42)
         n = 200
-        data = pl.DataFrame({
-            "y": np.random.poisson(2, n),
-            "age": np.random.uniform(20, 70, n),
-            "region": np.random.choice(["A", "B", "C"], n),
-        })
+        data = pl.DataFrame(
+            {
+                "y": np.random.poisson(2, n),
+                "age": np.random.uniform(20, 70, n),
+                "region": np.random.choice(["A", "B", "C"], n),
+            }
+        )
 
         result = rs.glm_dict(
             response="y",
             terms={"age": {"type": "bs", "df": 4}, "region": {"type": "categorical"}},
-            data=data, family="poisson",
+            data=data,
+            family="poisson",
         ).fit()
 
         assert result.converged
@@ -1439,16 +1696,19 @@ class TestDictSplineFormula:
     def test_dict_multiple_splines(self):
         np.random.seed(42)
         n = 150
-        data = pl.DataFrame({
-            "y": np.random.poisson(3, n),
-            "age": np.random.uniform(20, 70, n),
-            "income": np.random.uniform(30000, 150000, n),
-        })
+        data = pl.DataFrame(
+            {
+                "y": np.random.poisson(3, n),
+                "age": np.random.uniform(20, 70, n),
+                "income": np.random.uniform(30000, 150000, n),
+            }
+        )
 
         result = rs.glm_dict(
             response="y",
             terms={"age": {"type": "bs", "df": 4}, "income": {"type": "ns", "df": 3}},
-            data=data, family="poisson",
+            data=data,
+            family="poisson",
         ).fit()
 
         assert result.converged
@@ -1460,15 +1720,18 @@ class TestDictMonotonicSplineFormula:
     def test_dict_monotonic_bs_basic(self):
         np.random.seed(42)
         n = 100
-        data = pl.DataFrame({
-            "y": np.random.poisson(3, n),
-            "age": np.random.uniform(20, 70, n),
-        })
+        data = pl.DataFrame(
+            {
+                "y": np.random.poisson(3, n),
+                "age": np.random.uniform(20, 70, n),
+            }
+        )
 
         result = rs.glm_dict(
             response="y",
             terms={"age": {"type": "bs", "df": 5, "monotonicity": "increasing"}},
-            data=data, family="poisson",
+            data=data,
+            family="poisson",
         ).fit(max_iter=100)
 
         assert len(result.params) >= 2
@@ -1485,7 +1748,8 @@ class TestDictMonotonicSplineFormula:
         result = rs.glm_dict(
             response="y",
             terms={"vehicle_age": {"type": "bs", "df": 3, "monotonicity": "decreasing"}},
-            data=data, family="poisson",
+            data=data,
+            family="poisson",
         ).fit(max_iter=100, alpha=1e-4)
 
         assert len(result.params) >= 2
@@ -1505,7 +1769,8 @@ class TestDictMonotonicSplineFormula:
         result = rs.glm_dict(
             response="y",
             terms={"x": {"type": "bs", "df": 5, "monotonicity": "decreasing"}},
-            data=data, family="poisson",
+            data=data,
+            family="poisson",
         ).fit(max_iter=100)
 
         assert result.converged
@@ -1522,12 +1787,14 @@ class TestDictMonotonicSplineFormula:
     def test_dict_monotonic_bs_with_other_terms(self):
         np.random.seed(42)
         n = 200
-        data = pl.DataFrame({
-            "y": np.random.poisson(2, n),
-            "age": np.random.uniform(20, 70, n),
-            "income": np.random.uniform(30000, 150000, n),
-            "region": np.random.choice(["A", "B", "C"], n),
-        })
+        data = pl.DataFrame(
+            {
+                "y": np.random.poisson(2, n),
+                "age": np.random.uniform(20, 70, n),
+                "income": np.random.uniform(30000, 150000, n),
+                "region": np.random.choice(["A", "B", "C"], n),
+            }
+        )
 
         result = rs.glm_dict(
             response="y",
@@ -1536,7 +1803,8 @@ class TestDictMonotonicSplineFormula:
                 "income": {"type": "bs", "df": 3},
                 "region": {"type": "categorical"},
             },
-            data=data, family="poisson",
+            data=data,
+            family="poisson",
         ).fit(max_iter=100)
 
         assert len(result.params) >= 5
@@ -1546,6 +1814,7 @@ class TestDictMonotonicSplineFormula:
 # =============================================================================
 # Mirrors: test_train_predict_consistency.py → formula-based tests
 # =============================================================================
+
 
 class TestDictTrainPredictConsistency:
     """Verify dict API transformations are consistent (mirrors formula tests)."""
@@ -1560,8 +1829,10 @@ class TestDictTrainPredictConsistency:
         test_data = pl.DataFrame({"x": test_x, "y": np.zeros(500)})
 
         result = rs.glm_dict(
-            response="y", terms={"x": {"type": "ns", "df": 5}},
-            data=train_data, family="gaussian",
+            response="y",
+            terms={"x": {"type": "ns", "df": 5}},
+            data=train_data,
+            family="gaussian",
         ).fit()
 
         train_pred = result.fittedvalues
@@ -1582,8 +1853,10 @@ class TestDictTrainPredictConsistency:
         test_data = pl.DataFrame({"x": test_x, "y": np.zeros(500)})
 
         result = rs.glm_dict(
-            response="y", terms={"x": {"type": "bs", "df": 5}},
-            data=train_data, family="gaussian",
+            response="y",
+            terms={"x": {"type": "bs", "df": 5}},
+            data=train_data,
+            family="gaussian",
         ).fit()
 
         train_pred = result.fittedvalues
@@ -1606,7 +1879,8 @@ class TestDictTrainPredictConsistency:
         result = rs.glm_dict(
             response="y",
             terms={"x": {"type": "bs", "df": 5, "monotonicity": "increasing"}},
-            data=train_data, family="gaussian",
+            data=train_data,
+            family="gaussian",
         ).fit()
 
         train_pred = result.fittedvalues
@@ -1628,8 +1902,10 @@ class TestDictTrainPredictConsistency:
         test_data = pl.DataFrame({"cat": test_cat, "y": test_y})
 
         result = rs.glm_dict(
-            response="y", terms={"cat": {"type": "categorical"}},
-            data=train_data, family="gaussian",
+            response="y",
+            terms={"cat": {"type": "categorical"}},
+            data=train_data,
+            family="gaussian",
         ).fit()
 
         train_pred = result.fittedvalues
@@ -1649,13 +1925,15 @@ class TestDictTrainPredictConsistency:
         test_data = pl.DataFrame({"cat": test_cat, "y": test_y})
 
         result = rs.glm_dict(
-            response="y", terms={"cat": {"type": "categorical"}},
-            data=train_data, family="gaussian",
+            response="y",
+            terms={"cat": {"type": "categorical"}},
+            data=train_data,
+            family="gaussian",
         ).fit()
         test_pred = result.predict(test_data)
 
         assert np.all(np.isfinite(test_pred))
 
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

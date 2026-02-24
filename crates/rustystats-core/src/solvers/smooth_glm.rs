@@ -491,11 +491,11 @@ pub fn fit_smooth_glm_full_matrix(
     let p = x_full.ncols();
 
     if x_full.nrows() != n {
-        return Err(RustyStatsError::DimensionMismatch(format!(
-            "x_full has {} rows but y has {} elements",
+        return Err(RustyStatsError::dim_mismatch(
+            n,
             x_full.nrows(),
-            n
-        )));
+            "x_full rows vs y length",
+        ));
     }
 
     if smooth_specs.is_empty() {
@@ -547,14 +547,18 @@ pub fn fit_smooth_glm_full_matrix(
         }
         let k = spec.col_end - spec.col_start;
         if spec.penalty.nrows() != k || spec.penalty.ncols() != k {
-            return Err(RustyStatsError::DimensionMismatch(format!(
-                "Smooth spec {} penalty has shape ({}, {}) but expected ({}, {})",
-                i,
-                spec.penalty.nrows(),
-                spec.penalty.ncols(),
+            return Err(RustyStatsError::dim_mismatch(
                 k,
-                k
-            )));
+                spec.penalty.nrows(),
+                format!(
+                    "smooth spec {} penalty shape ({}, {}) vs expected ({}, {})",
+                    i,
+                    spec.penalty.nrows(),
+                    spec.penalty.ncols(),
+                    k,
+                    k
+                ),
+            ));
         }
     }
 

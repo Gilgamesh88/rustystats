@@ -218,6 +218,7 @@ macro_rules! impl_py_family {
             ) -> Bound<'py, PyArray1<f64>> {
                 self.inner
                     .variance(&mu.as_array().to_owned())
+                    .into_owned()
                     .into_pyarray_bound(py)
             }
 
@@ -347,7 +348,7 @@ impl PyTweedieFamily {
     ) -> Bound<'py, PyArray1<f64>> {
         let mu_array = mu.as_array().to_owned();
         let result = self.inner.variance(&mu_array);
-        result.into_pyarray_bound(py)
+        result.into_owned().into_pyarray_bound(py)
     }
 
     fn unit_deviance<'py>(
@@ -442,7 +443,7 @@ impl PyNegativeBinomialFamily {
     ) -> Bound<'py, PyArray1<f64>> {
         let mu_array = mu.as_array().to_owned();
         let result = self.inner.variance(&mu_array);
-        result.into_pyarray_bound(py)
+        result.into_owned().into_pyarray_bound(py)
     }
 
     fn unit_deviance<'py>(

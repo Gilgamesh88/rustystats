@@ -1,0 +1,577 @@
+"""Type stubs for the rustystats native Rust extension module."""
+
+import numpy as np
+import numpy.typing as npt
+
+# =============================================================================
+# Link Functions
+# =============================================================================
+
+class IdentityLink:
+    def __init__(self) -> None: ...
+    def name(self) -> str: ...
+    def link(self, mu: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]: ...
+    def inverse(self, eta: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]: ...
+    def derivative(self, mu: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]: ...
+
+class LogLink:
+    def __init__(self) -> None: ...
+    def name(self) -> str: ...
+    def link(self, mu: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]: ...
+    def inverse(self, eta: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]: ...
+    def derivative(self, mu: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]: ...
+
+class LogitLink:
+    def __init__(self) -> None: ...
+    def name(self) -> str: ...
+    def link(self, mu: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]: ...
+    def inverse(self, eta: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]: ...
+    def derivative(self, mu: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]: ...
+
+# =============================================================================
+# Family Classes
+# =============================================================================
+
+class GaussianFamily:
+    def __init__(self) -> None: ...
+    def name(self) -> str: ...
+    def variance(self, mu: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]: ...
+    def unit_deviance(
+        self, y: npt.NDArray[np.float64], mu: npt.NDArray[np.float64]
+    ) -> npt.NDArray[np.float64]: ...
+    def deviance(self, y: npt.NDArray[np.float64], mu: npt.NDArray[np.float64]) -> float: ...
+    def default_link(self) -> IdentityLink: ...
+
+class PoissonFamily:
+    def __init__(self) -> None: ...
+    def name(self) -> str: ...
+    def variance(self, mu: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]: ...
+    def unit_deviance(
+        self, y: npt.NDArray[np.float64], mu: npt.NDArray[np.float64]
+    ) -> npt.NDArray[np.float64]: ...
+    def deviance(self, y: npt.NDArray[np.float64], mu: npt.NDArray[np.float64]) -> float: ...
+    def default_link(self) -> LogLink: ...
+
+class BinomialFamily:
+    def __init__(self) -> None: ...
+    def name(self) -> str: ...
+    def variance(self, mu: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]: ...
+    def unit_deviance(
+        self, y: npt.NDArray[np.float64], mu: npt.NDArray[np.float64]
+    ) -> npt.NDArray[np.float64]: ...
+    def deviance(self, y: npt.NDArray[np.float64], mu: npt.NDArray[np.float64]) -> float: ...
+    def default_link(self) -> LogitLink: ...
+
+class GammaFamily:
+    def __init__(self) -> None: ...
+    def name(self) -> str: ...
+    def variance(self, mu: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]: ...
+    def unit_deviance(
+        self, y: npt.NDArray[np.float64], mu: npt.NDArray[np.float64]
+    ) -> npt.NDArray[np.float64]: ...
+    def deviance(self, y: npt.NDArray[np.float64], mu: npt.NDArray[np.float64]) -> float: ...
+    def default_link(self) -> LogLink: ...
+
+class QuasiPoissonFamily:
+    def __init__(self) -> None: ...
+    def name(self) -> str: ...
+    def variance(self, mu: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]: ...
+    def unit_deviance(
+        self, y: npt.NDArray[np.float64], mu: npt.NDArray[np.float64]
+    ) -> npt.NDArray[np.float64]: ...
+    def deviance(self, y: npt.NDArray[np.float64], mu: npt.NDArray[np.float64]) -> float: ...
+    def default_link(self) -> LogLink: ...
+
+class QuasiBinomialFamily:
+    def __init__(self) -> None: ...
+    def name(self) -> str: ...
+    def variance(self, mu: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]: ...
+    def unit_deviance(
+        self, y: npt.NDArray[np.float64], mu: npt.NDArray[np.float64]
+    ) -> npt.NDArray[np.float64]: ...
+    def deviance(self, y: npt.NDArray[np.float64], mu: npt.NDArray[np.float64]) -> float: ...
+    def default_link(self) -> LogitLink: ...
+
+class TweedieFamily:
+    def __init__(self, var_power: float = 1.5) -> None: ...
+    def name(self) -> str: ...
+    @property
+    def var_power(self) -> float: ...
+    def variance(self, mu: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]: ...
+    def unit_deviance(
+        self, y: npt.NDArray[np.float64], mu: npt.NDArray[np.float64]
+    ) -> npt.NDArray[np.float64]: ...
+    def deviance(self, y: npt.NDArray[np.float64], mu: npt.NDArray[np.float64]) -> float: ...
+    def default_link(self) -> LogLink: ...
+
+class NegativeBinomialFamily:
+    def __init__(self, theta: float = 1.0) -> None: ...
+    def name(self) -> str: ...
+    @property
+    def theta(self) -> float: ...
+    @property
+    def alpha(self) -> float: ...
+    def variance(self, mu: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]: ...
+    def unit_deviance(
+        self, y: npt.NDArray[np.float64], mu: npt.NDArray[np.float64]
+    ) -> npt.NDArray[np.float64]: ...
+    def deviance(self, y: npt.NDArray[np.float64], mu: npt.NDArray[np.float64]) -> float: ...
+    def default_link(self) -> LogLink: ...
+
+# =============================================================================
+# GLM Results
+# =============================================================================
+
+class GLMResults:
+    @property
+    def params(self) -> npt.NDArray[np.float64]: ...
+    @property
+    def coefficients(self) -> npt.NDArray[np.float64]: ...
+    @property
+    def fittedvalues(self) -> npt.NDArray[np.float64]: ...
+    @property
+    def linear_predictor(self) -> npt.NDArray[np.float64]: ...
+    @property
+    def deviance(self) -> float: ...
+    @property
+    def iterations(self) -> int: ...
+    @property
+    def converged(self) -> bool: ...
+    @property
+    def nobs(self) -> int: ...
+    @property
+    def df_resid(self) -> int: ...
+    @property
+    def df_model(self) -> int: ...
+    @property
+    def cov_params_unscaled(self) -> npt.NDArray[np.float64]: ...
+    @property
+    def get_design_matrix(self) -> npt.NDArray[np.float64] | None: ...
+    @property
+    def get_irls_weights(self) -> npt.NDArray[np.float64]: ...
+    @property
+    def family(self) -> str: ...
+    @property
+    def alpha(self) -> float: ...
+    @property
+    def l1_ratio(self) -> float | None: ...
+    @property
+    def penalty_type(self) -> str: ...
+    @property
+    def is_regularized(self) -> bool: ...
+    def scale(self) -> float: ...
+    def bse(self) -> npt.NDArray[np.float64]: ...
+    def tvalues(self) -> npt.NDArray[np.float64]: ...
+    def pvalues(self) -> npt.NDArray[np.float64]: ...
+    def conf_int(self, alpha: float = 0.05) -> npt.NDArray[np.float64]: ...
+    def significance_codes(self) -> list[str]: ...
+    def cov_robust(self, hc_type: str = "HC1") -> npt.NDArray[np.float64]: ...
+    def bse_robust(self, hc_type: str = "HC1") -> npt.NDArray[np.float64]: ...
+    def tvalues_robust(self, hc_type: str = "HC1") -> npt.NDArray[np.float64]: ...
+    def pvalues_robust(self, hc_type: str = "HC1") -> npt.NDArray[np.float64]: ...
+    def conf_int_robust(
+        self, alpha: float = 0.05, hc_type: str = "HC1"
+    ) -> npt.NDArray[np.float64]: ...
+    def resid_response(self) -> npt.NDArray[np.float64]: ...
+    def resid_pearson(self) -> npt.NDArray[np.float64]: ...
+    def resid_deviance(self) -> npt.NDArray[np.float64]: ...
+    def resid_working(self) -> npt.NDArray[np.float64]: ...
+    def pearson_chi2(self) -> float: ...
+    def scale_pearson(self) -> float: ...
+    def llf(self) -> float: ...
+    def aic(self) -> float: ...
+    def bic(self) -> float: ...
+    def null_deviance(self) -> float: ...
+    def n_nonzero(self) -> int: ...
+    def selected_features(self) -> list[int]: ...
+
+# =============================================================================
+# GLM Fitting Functions
+# =============================================================================
+
+def fit_glm_py(
+    y: npt.NDArray[np.float64],
+    x: npt.NDArray[np.float64],
+    family: str,
+    link: str,
+    offset: npt.NDArray[np.float64] | None = None,
+    weights: npt.NDArray[np.float64] | None = None,
+    alpha: float = 0.0,
+    l1_ratio: float = 0.0,
+    max_iter: int = 25,
+    tol: float = 1e-8,
+    var_power: float = 1.5,
+    theta: float = 1.0,
+    verbose: bool = False,
+    init_coefficients: npt.NDArray[np.float64] | None = None,
+    design_matrix: npt.NDArray[np.float64] | None = None,
+    y_raw: npt.NDArray[np.float64] | None = None,
+    irls_weights_out: bool = False,
+) -> GLMResults: ...
+def fit_negbinomial_py(
+    y: npt.NDArray[np.float64],
+    x: npt.NDArray[np.float64],
+    link: str,
+    offset: npt.NDArray[np.float64] | None = None,
+    weights: npt.NDArray[np.float64] | None = None,
+    alpha: float = 0.0,
+    l1_ratio: float = 0.0,
+    max_iter: int = 25,
+    tol: float = 1e-8,
+    theta: float = 1.0,
+    verbose: bool = False,
+    init_coefficients: npt.NDArray[np.float64] | None = None,
+    design_matrix: npt.NDArray[np.float64] | None = None,
+    y_raw: npt.NDArray[np.float64] | None = None,
+    irls_weights_out: bool = False,
+) -> GLMResults: ...
+def fit_smooth_glm_unified_py(
+    y: npt.NDArray[np.float64],
+    x_full: npt.NDArray[np.float64],
+    family: str,
+    link: str,
+    smooth_specs: list[dict],
+    offset: npt.NDArray[np.float64] | None = None,
+    weights: npt.NDArray[np.float64] | None = None,
+    max_iter: int = 25,
+    tol: float = 1e-8,
+    var_power: float = 1.5,
+    theta: float = 1.0,
+    verbose: bool = False,
+    y_raw: npt.NDArray[np.float64] | None = None,
+) -> dict: ...
+def fit_cv_path_py(
+    y: npt.NDArray[np.float64],
+    x: npt.NDArray[np.float64],
+    family: str,
+    link: str,
+    fold_ids: npt.NDArray[np.int64],
+    alphas: npt.NDArray[np.float64],
+    l1_ratio: float = 0.0,
+    offset: npt.NDArray[np.float64] | None = None,
+    weights: npt.NDArray[np.float64] | None = None,
+    max_iter: int = 25,
+    tol: float = 1e-8,
+    var_power: float = 1.5,
+    theta: float = 1.0,
+    verbose: bool = False,
+) -> dict: ...
+
+# =============================================================================
+# Inference Functions
+# =============================================================================
+
+def score_test_continuous_py(
+    z: npt.NDArray[np.float64],
+    x: npt.NDArray[np.float64],
+    y: npt.NDArray[np.float64],
+    mu: npt.NDArray[np.float64],
+    weights: npt.NDArray[np.float64],
+    bread: npt.NDArray[np.float64],
+    family: str,
+) -> dict: ...
+def score_test_categorical_py(
+    z_matrix: npt.NDArray[np.float64],
+    x: npt.NDArray[np.float64],
+    y: npt.NDArray[np.float64],
+    mu: npt.NDArray[np.float64],
+    weights: npt.NDArray[np.float64],
+    bread: npt.NDArray[np.float64],
+    family: str,
+) -> dict: ...
+def chi2_cdf_py(x: float, df: float) -> float: ...
+def t_cdf_py(x: float, df: float) -> float: ...
+def f_cdf_py(x: float, df1: float, df2: float) -> float: ...
+
+# =============================================================================
+# Spline Functions
+# =============================================================================
+
+def bs_py(
+    x: npt.NDArray[np.float64],
+    df: int | None = None,
+    knots: npt.NDArray[np.float64] | None = None,
+    degree: int = 3,
+    include_intercept: bool = False,
+    lower_bound: float | None = None,
+    upper_bound: float | None = None,
+) -> npt.NDArray[np.float64]: ...
+def ns_py(
+    x: npt.NDArray[np.float64],
+    df: int | None = None,
+    knots: npt.NDArray[np.float64] | None = None,
+    include_intercept: bool = False,
+    lower_bound: float | None = None,
+    upper_bound: float | None = None,
+) -> npt.NDArray[np.float64]: ...
+def ns_with_knots_py(
+    x: npt.NDArray[np.float64],
+    df: int | None = None,
+    knots: npt.NDArray[np.float64] | None = None,
+    include_intercept: bool = False,
+    lower_bound: float | None = None,
+    upper_bound: float | None = None,
+) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]: ...
+def bs_knots_py(
+    x: npt.NDArray[np.float64],
+    df: int | None = None,
+    knots: npt.NDArray[np.float64] | None = None,
+    degree: int = 3,
+    include_intercept: bool = False,
+    lower_bound: float | None = None,
+    upper_bound: float | None = None,
+) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]: ...
+def bs_names_py(prefix: str, n_cols: int) -> list[str]: ...
+def ns_names_py(prefix: str, n_cols: int) -> list[str]: ...
+def ms_py(
+    x: npt.NDArray[np.float64],
+    df: int | None = None,
+    knots: npt.NDArray[np.float64] | None = None,
+    degree: int = 3,
+    include_intercept: bool = False,
+    lower_bound: float | None = None,
+    upper_bound: float | None = None,
+    increasing: bool = True,
+) -> npt.NDArray[np.float64]: ...
+def ms_with_knots_py(
+    x: npt.NDArray[np.float64],
+    df: int | None = None,
+    knots: npt.NDArray[np.float64] | None = None,
+    degree: int = 3,
+    include_intercept: bool = False,
+    lower_bound: float | None = None,
+    upper_bound: float | None = None,
+    increasing: bool = True,
+) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]: ...
+def ms_names_py(prefix: str, n_cols: int) -> list[str]: ...
+def compute_knots_py(x: npt.NDArray[np.float64], n_knots: int) -> npt.NDArray[np.float64]: ...
+def compute_knots_natural_py(
+    x: npt.NDArray[np.float64], n_knots: int
+) -> npt.NDArray[np.float64]: ...
+
+# =============================================================================
+# Design Matrix Functions
+# =============================================================================
+
+def encode_categorical_py(
+    values: npt.NDArray[np.float64],
+    drop_first: bool = True,
+) -> tuple[npt.NDArray[np.float64], list[str]]: ...
+def factorize_strings_py(
+    values: list[str],
+) -> tuple[npt.NDArray[np.int64], list[str]]: ...
+def encode_categorical_indices_py(
+    indices: npt.NDArray[np.int64],
+    n_levels: int,
+    drop_first: bool = True,
+) -> npt.NDArray[np.float64]: ...
+def build_cat_cat_interaction_py(
+    col_a: npt.NDArray[np.int64],
+    col_b: npt.NDArray[np.int64],
+    n_levels_a: int,
+    n_levels_b: int,
+    drop_first: bool = True,
+) -> tuple[npt.NDArray[np.float64], list[str]]: ...
+def build_cat_cont_interaction_py(
+    cat_col: npt.NDArray[np.int64],
+    cont_col: npt.NDArray[np.float64],
+    n_levels: int,
+    drop_first: bool = True,
+) -> tuple[npt.NDArray[np.float64], list[str]]: ...
+def build_cont_cont_interaction_py(
+    col_a: npt.NDArray[np.float64],
+    col_b: npt.NDArray[np.float64],
+) -> npt.NDArray[np.float64]: ...
+def multiply_matrix_by_continuous_py(
+    matrix: npt.NDArray[np.float64],
+    continuous: npt.NDArray[np.float64],
+) -> npt.NDArray[np.float64]: ...
+
+# =============================================================================
+# Target Encoding Functions
+# =============================================================================
+
+def target_encode_py(
+    values: npt.NDArray[np.int64],
+    target: npt.NDArray[np.float64],
+    n_permutations: int = 1,
+    seed: int = 42,
+) -> tuple[npt.NDArray[np.float64], dict]: ...
+def apply_target_encoding_py(
+    values: npt.NDArray[np.int64],
+    encoding_map: dict,
+    global_mean: float,
+) -> npt.NDArray[np.float64]: ...
+def target_encode_with_exposure_py(
+    values: npt.NDArray[np.int64],
+    target: npt.NDArray[np.float64],
+    exposure: npt.NDArray[np.float64],
+    n_permutations: int = 1,
+    seed: int = 42,
+) -> tuple[npt.NDArray[np.float64], dict]: ...
+def apply_exposure_weighted_target_encoding_py(
+    values: npt.NDArray[np.int64],
+    encoding_map: dict,
+    global_mean: float,
+) -> npt.NDArray[np.float64]: ...
+def frequency_encode_py(
+    values: npt.NDArray[np.int64],
+) -> tuple[npt.NDArray[np.float64], dict]: ...
+def apply_frequency_encoding_py(
+    values: npt.NDArray[np.int64],
+    encoding_map: dict,
+) -> npt.NDArray[np.float64]: ...
+def target_encode_interaction_py(
+    col_a: npt.NDArray[np.int64],
+    col_b: npt.NDArray[np.int64],
+    target: npt.NDArray[np.float64],
+    n_permutations: int = 1,
+    seed: int = 42,
+) -> tuple[npt.NDArray[np.float64], dict]: ...
+def target_encode_interaction_with_exposure_py(
+    col_a: npt.NDArray[np.int64],
+    col_b: npt.NDArray[np.int64],
+    target: npt.NDArray[np.float64],
+    exposure: npt.NDArray[np.float64],
+    n_permutations: int = 1,
+    seed: int = 42,
+) -> tuple[npt.NDArray[np.float64], dict]: ...
+
+# =============================================================================
+# Diagnostics Functions
+# =============================================================================
+
+def compute_calibration_curve_py(
+    y: npt.NDArray[np.float64],
+    mu: npt.NDArray[np.float64],
+    n_bins: int = 10,
+) -> dict: ...
+def compute_discrimination_stats_py(
+    y: npt.NDArray[np.float64],
+    mu: npt.NDArray[np.float64],
+) -> dict: ...
+def compute_ae_continuous_py(
+    values: npt.NDArray[np.float64],
+    y: npt.NDArray[np.float64],
+    mu: npt.NDArray[np.float64],
+    exposure: npt.NDArray[np.float64] | None = None,
+    n_bins: int = 10,
+    family: str = "poisson",
+) -> list[dict]: ...
+def compute_ae_categorical_py(
+    levels: npt.NDArray[np.float64],
+    y: npt.NDArray[np.float64],
+    mu: npt.NDArray[np.float64],
+    exposure: npt.NDArray[np.float64] | None = None,
+    rare_threshold_pct: float = 1.0,
+    max_levels: int = 20,
+    family: str = "poisson",
+) -> list[dict]: ...
+def compute_factor_deviance_py(
+    factor_name: str,
+    factor_values: npt.NDArray[np.float64],
+    y: npt.NDArray[np.float64],
+    mu: npt.NDArray[np.float64],
+    family: str = "poisson",
+    var_power: float = 1.5,
+    theta: float = 1.0,
+) -> dict: ...
+def compute_loss_metrics_py(
+    y: npt.NDArray[np.float64],
+    mu: npt.NDArray[np.float64],
+    family: str,
+    weights: npt.NDArray[np.float64] | None = None,
+    var_power: float | None = None,
+    theta: float | None = None,
+) -> dict: ...
+def detect_interactions_py(
+    y: npt.NDArray[np.float64],
+    mu: npt.NDArray[np.float64],
+    columns: dict,
+    weights: npt.NDArray[np.float64] | None = None,
+    top_k: int = 20,
+    n_bins: int = 10,
+) -> list[dict]: ...
+def compute_lorenz_curve_py(
+    y: npt.NDArray[np.float64],
+    mu: npt.NDArray[np.float64],
+) -> dict: ...
+def hosmer_lemeshow_test_py(
+    y: npt.NDArray[np.float64],
+    mu: npt.NDArray[np.float64],
+    n_groups: int = 10,
+) -> dict: ...
+def compute_fit_statistics_py(
+    y: npt.NDArray[np.float64],
+    mu: npt.NDArray[np.float64],
+    family: str,
+    n_params: int,
+    weights: npt.NDArray[np.float64] | None = None,
+    var_power: float | None = None,
+    theta: float | None = None,
+) -> dict: ...
+def compute_dataset_metrics_py(
+    y_train: npt.NDArray[np.float64],
+    mu_train: npt.NDArray[np.float64],
+    y_test: npt.NDArray[np.float64],
+    mu_test: npt.NDArray[np.float64],
+    family: str,
+    weights_train: npt.NDArray[np.float64] | None = None,
+    weights_test: npt.NDArray[np.float64] | None = None,
+    var_power: float | None = None,
+    theta: float | None = None,
+) -> dict: ...
+def compute_residual_summary_py(
+    y: npt.NDArray[np.float64],
+    mu: npt.NDArray[np.float64],
+    family: str,
+    link: str,
+    var_power: float | None = None,
+    theta: float | None = None,
+) -> dict: ...
+def compute_residual_pattern_py(
+    y: npt.NDArray[np.float64],
+    mu: npt.NDArray[np.float64],
+    family: str,
+    var_power: float | None = None,
+    theta: float | None = None,
+) -> dict: ...
+def compute_pearson_residuals_py(
+    y: npt.NDArray[np.float64],
+    mu: npt.NDArray[np.float64],
+    family: str,
+    var_power: float = 1.5,
+    theta: float = 1.0,
+) -> npt.NDArray[np.float64]: ...
+def compute_deviance_residuals_py(
+    y: npt.NDArray[np.float64],
+    mu: npt.NDArray[np.float64],
+    family: str,
+    var_power: float = 1.5,
+    theta: float = 1.0,
+) -> npt.NDArray[np.float64]: ...
+def compute_null_deviance_py(
+    y: npt.NDArray[np.float64],
+    family: str,
+    weights: npt.NDArray[np.float64] | None = None,
+    offset: npt.NDArray[np.float64] | None = None,
+) -> float: ...
+def compute_unit_deviance_py(
+    y: npt.NDArray[np.float64],
+    mu: npt.NDArray[np.float64],
+    family: str,
+    var_power: float = 1.5,
+    theta: float = 1.0,
+) -> npt.NDArray[np.float64]: ...
+
+# =============================================================================
+# ONNX Export Functions
+# =============================================================================
+
+def build_onnx_glm_scoring_py(
+    coefficients: npt.NDArray[np.float64],
+    link: str,
+    feature_names: list[str],
+    model_name: str = "glm",
+) -> dict: ...
+def serialize_onnx_graph_py(graph: dict) -> bytes: ...

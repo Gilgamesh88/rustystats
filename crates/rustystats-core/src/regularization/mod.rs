@@ -327,16 +327,6 @@ pub struct RegularizationConfig {
     /// The penalty type and strength
     pub penalty: Penalty,
 
-    /// Whether to standardize predictors before fitting.
-    ///
-    /// If true:
-    /// - Predictors are centered (mean=0) and scaled (std=1)
-    /// - Coefficients are transformed back to original scale
-    /// - Intercept is computed on original scale
-    ///
-    /// Default: true (recommended for regularization)
-    pub standardize: bool,
-
     /// Whether the first column of X is an intercept.
     ///
     /// If true, the first coefficient is never penalized.
@@ -369,7 +359,6 @@ impl Default for RegularizationConfig {
     fn default() -> Self {
         Self {
             penalty: Penalty::None,
-            standardize: true,
             fit_intercept: true,
             penalty_weights: None,
             max_cd_iterations: 1000,
@@ -408,19 +397,15 @@ impl RegularizationConfig {
         }
     }
 
-    /// Set whether to standardize predictors.
-    pub fn with_standardize(mut self, standardize: bool) -> Self {
-        self.standardize = standardize;
-        self
-    }
-
     /// Set whether the first column is an intercept.
+    #[must_use]
     pub fn with_intercept(mut self, fit_intercept: bool) -> Self {
         self.fit_intercept = fit_intercept;
         self
     }
 
     /// Set custom penalty weights for each predictor.
+    #[must_use]
     pub fn with_penalty_weights(mut self, weights: Vec<f64>) -> Self {
         self.penalty_weights = Some(weights);
         self
@@ -507,12 +492,9 @@ mod tests {
 
     #[test]
     fn test_config_builders() {
-        let config = RegularizationConfig::ridge(0.1)
-            .with_standardize(false)
-            .with_intercept(true);
+        let config = RegularizationConfig::ridge(0.1).with_intercept(true);
 
         assert_eq!(config.penalty.l2_penalty(), 0.1);
-        assert!(!config.standardize);
         assert!(config.fit_intercept);
     }
 

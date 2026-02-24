@@ -48,6 +48,8 @@
 //
 // =============================================================================
 
+use std::borrow::Cow;
+
 use super::Family;
 use crate::constants::MU_MIN_POSITIVE;
 use crate::links::{Link, LogLink};
@@ -129,9 +131,9 @@ impl Family for NegativeBinomialFamily {
     /// This is the NB2 (quadratic) variance function.
     /// The full variance is Var(Y) = V(μ) (no additional dispersion parameter).
     #[inline]
-    fn variance(&self, mu: &Array1<f64>) -> Array1<f64> {
+    fn variance<'a>(&self, mu: &'a Array1<f64>) -> Cow<'a, Array1<f64>> {
         let alpha = self.alpha();
-        mu.mapv(|m| m + alpha * m * m)
+        Cow::Owned(mu.mapv(|m| m + alpha * m * m))
     }
 
     /// Unit deviance for Negative Binomial.
@@ -224,7 +226,7 @@ mod tests {
             2.0 + 4.0,  // 6
             4.0 + 16.0, // 20
         ];
-        assert_abs_diff_eq!(var, expected, epsilon = 1e-10);
+        assert_abs_diff_eq!(*var, expected, epsilon = 1e-10);
     }
 
     #[test]

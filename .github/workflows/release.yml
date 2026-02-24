@@ -52,20 +52,22 @@ jobs:
             exit 1
           fi
 
-      - name: Bump version in pyproject.toml
+      - name: Bump version in pyproject.toml and Cargo.toml files
         id: bump
         run: |
           sed -i 's/^version = ".*"/version = "${{ inputs.version }}"/' pyproject.toml
+          sed -i '0,/^version = ".*"/s//version = "${{ inputs.version }}"/' crates/rustystats-core/Cargo.toml
+          sed -i '0,/^version = ".*"/s//version = "${{ inputs.version }}"/' crates/rustystats/Cargo.toml
           echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
           echo "tag=v${{ inputs.version }}" >> "$GITHUB_OUTPUT"
           echo "✅ Version bumped to ${{ inputs.version }}"
-          grep '^version' pyproject.toml
+          grep '^version' pyproject.toml crates/rustystats-core/Cargo.toml crates/rustystats/Cargo.toml
 
       - name: Commit and tag
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add pyproject.toml
+          git add pyproject.toml crates/rustystats-core/Cargo.toml crates/rustystats/Cargo.toml
           git commit -m "release: v${{ inputs.version }}"
           git tag "v${{ inputs.version }}"
           git push origin HEAD --tags

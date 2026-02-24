@@ -69,7 +69,7 @@ pub fn pearson_chi2(
     let contributions: Array1<f64> =
         ndarray::Zip::from(y)
             .and(mu)
-            .and(&variance)
+            .and(&*variance)
             .map_collect(|&yi, &mui, &vi| {
                 let diff = yi - mui;
                 (diff * diff) / vi.max(ZERO_TOL)

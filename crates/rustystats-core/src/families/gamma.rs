@@ -42,6 +42,8 @@
 //
 // =============================================================================
 
+use std::borrow::Cow;
+
 use super::Family;
 use crate::links::{Link, LogLink};
 use ndarray::Array1;
@@ -71,8 +73,8 @@ impl Family for GammaFamily {
     ///
     /// This means larger claims have proportionally larger variance.
     /// The full variance is: Var(Y) = φ × μ² where φ is the dispersion.
-    fn variance(&self, mu: &Array1<f64>) -> Array1<f64> {
-        mu.mapv(|x| x * x)
+    fn variance<'a>(&self, mu: &'a Array1<f64>) -> Cow<'a, Array1<f64>> {
+        Cow::Owned(mu.mapv(|x| x * x))
     }
 
     /// Unit deviance: 2 × [-log(y/μ) + (y-μ)/μ]
@@ -182,7 +184,7 @@ mod tests {
 
         // V(μ) = μ²
         let expected = array![100.0, 10000.0, 1000000.0];
-        assert_abs_diff_eq!(var, expected, epsilon = 1e-10);
+        assert_abs_diff_eq!(*var, expected, epsilon = 1e-10);
     }
 
     #[test]

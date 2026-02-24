@@ -31,6 +31,8 @@
 //
 // =============================================================================
 
+use std::borrow::Cow;
+
 use crate::constants::{MU_MIN_POSITIVE, ZERO_TOL};
 use crate::families::Family;
 use crate::links::{Link, LogLink};
@@ -99,8 +101,8 @@ impl Family for TweedieFamily {
     }
 
     /// Variance function: V(μ) = μ^p
-    fn variance(&self, mu: &Array1<f64>) -> Array1<f64> {
-        mu.mapv(|m| m.powf(self.var_power).max(MU_MIN_POSITIVE))
+    fn variance<'a>(&self, mu: &'a Array1<f64>) -> Cow<'a, Array1<f64>> {
+        Cow::Owned(mu.mapv(|m| m.powf(self.var_power).max(MU_MIN_POSITIVE)))
     }
 
     /// Unit deviance for Tweedie distribution.

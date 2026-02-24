@@ -1,4 +1,4 @@
-use super::initialize_mu_safe;
+use super::{compute_irls_weights, initialize_mu_safe, validate_glm_inputs};
 
 // =============================================================================
 // IRLS: Iteratively Reweighted Least Squares
@@ -53,9 +53,7 @@ use nalgebra::{DMatrix, DVector};
 use ndarray::{Array1, Array2, ArrayView2};
 use rayon::prelude::*;
 
-use crate::constants::{
-    CONVERGENCE_TOL, DEFAULT_MAX_ITER, MAX_IRLS_WEIGHT, MIN_IRLS_WEIGHT, ZERO_TOL,
-};
+use crate::constants::{CONVERGENCE_TOL, DEFAULT_MAX_ITER, MIN_IRLS_WEIGHT, ZERO_TOL};
 use crate::error::{Result, RustyStatsError};
 use crate::families::Family;
 use crate::links::Link;
@@ -193,42 +191,49 @@ impl Default for FitConfig {
 
 impl FitConfig {
     /// Set regularization configuration.
+    #[must_use]
     pub fn with_regularization(mut self, reg: RegularizationConfig) -> Self {
         self.regularization = reg;
         self
     }
 
     /// Set maximum iterations.
+    #[must_use]
     pub fn with_max_iterations(mut self, max_iter: usize) -> Self {
         self.max_iterations = max_iter;
         self
     }
 
     /// Set convergence tolerance.
+    #[must_use]
     pub fn with_tolerance(mut self, tol: f64) -> Self {
         self.tolerance = tol;
         self
     }
 
     /// Set verbose mode.
+    #[must_use]
     pub fn with_verbose(mut self, verbose: bool) -> Self {
         self.verbose = verbose;
         self
     }
 
     /// Set non-negative coefficient constraints.
+    #[must_use]
     pub fn with_nonneg_indices(mut self, indices: Vec<usize>) -> Self {
         self.nonneg_indices = indices;
         self
     }
 
     /// Set non-positive coefficient constraints.
+    #[must_use]
     pub fn with_nonpos_indices(mut self, indices: Vec<usize>) -> Self {
         self.nonpos_indices = indices;
         self
     }
 
     /// Skip covariance computation (for CV paths).
+    #[must_use]
     pub fn with_skip_covariance(mut self, skip: bool) -> Self {
         self.skip_covariance = skip;
         self
@@ -318,6 +323,9 @@ pub struct IRLSResult {
     /// Optional to avoid expensive copies for large datasets.
     /// Set to None by default; populated only when needed.
     pub design_matrix: Option<Array2<f64>>,
+
+    /// Warnings collected during fitting (replaces stderr printing).
+    pub warnings: Vec<String>,
 }
 
 // =============================================================================
@@ -413,76 +421,25 @@ fn fit_glm_core(
     penalty: Penalty,
 ) -> Result<IRLSResult> {
     // -------------------------------------------------------------------------
-    // Step 0: Validate inputs
+    // Step 0: Validate inputs and set up offset/weights
     // -------------------------------------------------------------------------
     let n = y.len();
     let p = x.ncols();
-
-    if x.nrows() != n {
-        return Err(RustyStatsError::DimensionMismatch(format!(
-            "X has {} rows but y has {} elements",
-            x.nrows(),
-            n
-        )));
-    }
-
-    if n == 0 {
-        return Err(RustyStatsError::EmptyInput("y is empty".to_string()));
-    }
-
-    if p == 0 {
-        return Err(RustyStatsError::EmptyInput("X has no columns".to_string()));
-    }
-
-    // -------------------------------------------------------------------------
-    // Step 0b: Set up offset and prior weights
-    // -------------------------------------------------------------------------
-    // Offset: Added to linear predictor (e.g., log(exposure) for rate models)
-    // Prior weights: User-specified observation weights
-    let offset_vec = match offset {
-        Some(o) => {
-            if o.len() != n {
-                return Err(RustyStatsError::DimensionMismatch(format!(
-                    "offset has {} elements but y has {}",
-                    o.len(),
-                    n
-                )));
-            }
-            o.clone()
-        }
-        None => Array1::zeros(n),
-    };
-
-    let prior_weights_vec = match weights {
-        Some(w) => {
-            if w.len() != n {
-                return Err(RustyStatsError::DimensionMismatch(format!(
-                    "weights has {} elements but y has {}",
-                    w.len(),
-                    n
-                )));
-            }
-            // Ensure weights are positive
-            if w.iter().any(|&x| x < 0.0) {
-                return Err(RustyStatsError::InvalidValue(
-                    "weights must be non-negative".to_string(),
-                ));
-            }
-            w.clone()
-        }
-        None => Array1::ones(n),
-    };
+    let validated = validate_glm_inputs(y, x, offset, weights)?;
+    let offset_vec = validated.offset;
+    let prior_weights_vec = validated.prior_weights;
+    let mut warnings: Vec<String> = Vec::new();
 
     // -------------------------------------------------------------------------
     // Step 1: Initialize μ (from coefficients if warm-starting, else from family)
     // -------------------------------------------------------------------------
     let mut mu = if let Some(init) = init_coefficients {
         if init.len() != p {
-            return Err(RustyStatsError::DimensionMismatch(format!(
-                "init_coefficients has {} elements but X has {} columns",
+            return Err(RustyStatsError::dim_mismatch(
+                p,
                 init.len(),
-                p
-            )));
+                "init_coefficients length vs X columns",
+            ));
         }
         let eta_init = x.dot(init) + &offset_vec;
         let mu_init = link.inverse(&eta_init);
@@ -491,11 +448,11 @@ fn fit_glm_core(
         let mu_init = family.initialize_mu(y);
         // Ensure μ is valid (e.g., positive for Poisson, in (0,1) for Binomial)
         if !family.is_valid_mu(&mu_init) {
-            eprintln!(
-                "Warning: Family '{}' initial μ values were invalid. Using safe fallback initialization. \
+            warnings.push(format!(
+                "Family '{}' initial μ values were invalid. Using safe fallback initialization. \
                 This may indicate unusual response values (e.g., all zeros, extreme values).",
                 family.name()
-            );
+            ));
             initialize_mu_safe(y, family)
         } else {
             mu_init
@@ -539,78 +496,19 @@ fn fit_glm_core(
         // ---------------------------------------------------------------------
         // Step 4a: Compute working weights W
         // ---------------------------------------------------------------------
-        // The standard IRLS weight for observation i is:
-        //     w_irls_i = 1 / (V(μ_i) × g'(μ_i)²)
-        //
-        // OPTIMIZATION: For certain family/link combinations (Gamma, Tweedie 1<p<2
-        // with log link), using the true Hessian instead of Fisher information
-        // can dramatically reduce iterations (50-100 → 5-10). This is because
-        // the true Hessian provides better curvature information.
-        //
-        // Combined with prior weights:
-        //     w_i = prior_weight_i × w_irls_i
-        // ---------------------------------------------------------------------
-        let link_deriv = link.derivative(&mu);
-
-        // Check if family supports true Hessian weights (Gamma, Tweedie 1<p<2)
-        let use_true_hessian = family.use_true_hessian_weights() && link.name() == "log";
-        let hessian_weights = if use_true_hessian {
-            Some(family.true_hessian_weights(&mu, y))
-        } else {
-            None
-        };
-        let variance = if use_true_hessian {
-            None
-        } else {
-            Some(family.variance(&mu))
-        };
-
-        // PARALLEL: Compute IRLS weights, combined weights, and working response
-        // in a single parallel pass to minimize allocation overhead
-        let n = y.len();
-        let min_weight = config.min_weight;
-
-        let results: Vec<(f64, f64, f64)> = (0..n)
-            .into_par_iter()
-            .map(|i| {
-                let d = link_deriv[i];
-
-                // IRLS weight: use true Hessian if available, else Fisher info
-                let iw = if let Some(ref hw) = hessian_weights {
-                    // True Hessian weight - use directly without dividing by d²
-                    // For Gamma+log link: w = μ (not μ/(1/μ)² = μ³ which was the bug)
-                    hw[i].max(min_weight).min(MAX_IRLS_WEIGHT)
-                } else {
-                    // Standard Fisher information weight: w = 1/(V(μ) × (dη/dμ)²)
-                    let v = variance
-                        .as_ref()
-                        .expect("variance present in Fisher branch")[i];
-                    (1.0 / (v * d * d)).max(min_weight).min(MAX_IRLS_WEIGHT)
-                };
-
-                // Combined weight
-                let cw = prior_weights_vec[i] * iw;
-
-                // Working response: z = (η - offset) + (y - μ) × g'(μ)
-                let e = eta[i] - offset_vec[i];
-                let wr = e + (y[i] - mu[i]) * d;
-
-                (iw, cw, wr)
-            })
-            .collect();
-
-        let mut irls_weights_vec = Vec::with_capacity(n);
-        let mut combined_weights_vec = Vec::with_capacity(n);
-        let mut working_response_vec = Vec::with_capacity(n);
-        for (iw, cw, wr) in results {
-            irls_weights_vec.push(iw);
-            combined_weights_vec.push(cw);
-            working_response_vec.push(wr);
-        }
-
-        let irls_weights = Array1::from_vec(irls_weights_vec);
-        let combined_weights = Array1::from_vec(combined_weights_vec);
-        let working_response = Array1::from_vec(working_response_vec);
+        let weight_result = compute_irls_weights(
+            y,
+            &mu,
+            &eta,
+            &offset_vec,
+            &prior_weights_vec,
+            family,
+            link,
+            config.min_weight,
+        );
+        let irls_weights = weight_result.irls_weights;
+        let combined_weights = weight_result.combined_weights;
+        let working_response = weight_result.working_response;
 
         // ---------------------------------------------------------------------
         // Step 4c: Solve weighted least squares: (X'WX)β = X'Wz
@@ -849,9 +747,10 @@ fn fit_glm_core(
         }
         _ => {
             // Final extraction failed or produced NaN - use stored coefficients
-            eprintln!(
-                "Warning: Final coefficient extraction produced NaN/Inf. \
+            warnings.push(
+                "Final coefficient extraction produced NaN/Inf. \
                 Using coefficients from best iteration instead. This may indicate numerical instability."
+                    .to_string(),
             );
             if use_coefficients
                 .iter()
@@ -910,6 +809,7 @@ fn fit_glm_core(
         family_name: family.name().to_string(),
         penalty,
         design_matrix: None, // Computed lazily in Python layer to avoid expensive copy
+        warnings,
     })
 }
 
@@ -965,6 +865,13 @@ pub fn compute_xtwx_xtwz(
         }
     };
 
+    // SAFETY: Bounds verification for all unsafe accesses below.
+    // x_slice has length n*p, w_slice and z_slice have length n.
+    // All accesses use indices < n*p, < n, and < p*p respectively.
+    assert_eq!(x_slice.len(), n * p, "x_slice length must be n*p");
+    assert_eq!(w_slice.len(), n, "w_slice length must be n");
+    assert_eq!(z_slice.len(), n, "z_slice length must be n");
+
     const CHUNK_SIZE: usize = 8192;
     let num_chunks = n.div_ceil(CHUNK_SIZE);
 
@@ -977,18 +884,24 @@ pub fn compute_xtwx_xtwz(
             let mut xtz_local = vec![0.0; p];
 
             for k in chunk_start..chunk_end {
+                // SAFETY: k < n, so k < w_slice.len() and k < z_slice.len()
                 let wk = unsafe { *w_slice.get_unchecked(k) };
                 let zk = unsafe { *z_slice.get_unchecked(k) };
                 let wz = wk * zk;
                 let row_start = k * p;
 
                 for i in 0..p {
+                    // SAFETY: row_start + i = k*p + i where k < n and i < p,
+                    // so row_start + i < n*p = x_slice.len()
                     let xki = unsafe { *x_slice.get_unchecked(row_start + i) };
                     let xki_w = xki * wk;
+                    // SAFETY: i < p = xtz_local.len()
                     unsafe { *xtz_local.get_unchecked_mut(i) += xki * wz };
 
                     for j in i..p {
+                        // SAFETY: row_start + j < n*p = x_slice.len()
                         let xkj = unsafe { *x_slice.get_unchecked(row_start + j) };
+                        // SAFETY: i*p + j < p*p = xtx_local.len() (since i <= j < p)
                         unsafe { *xtx_local.get_unchecked_mut(i * p + j) += xki_w * xkj };
                     }
                 }
@@ -1141,13 +1054,17 @@ pub fn solve_weighted_least_squares_with_penalty_matrix(
 
     // Validate penalty matrix dimensions
     if penalty_matrix.nrows() != p || penalty_matrix.ncols() != p {
-        return Err(RustyStatsError::DimensionMismatch(format!(
-            "Penalty matrix has shape ({}, {}) but expected ({}, {})",
-            penalty_matrix.nrows(),
-            penalty_matrix.ncols(),
+        return Err(RustyStatsError::dim_mismatch(
             p,
-            p
-        )));
+            penalty_matrix.nrows(),
+            format!(
+                "penalty matrix shape ({}, {}) vs expected ({}, {})",
+                penalty_matrix.nrows(),
+                penalty_matrix.ncols(),
+                p,
+                p
+            ),
+        ));
     }
 
     let (mut xtx, xtz) = compute_xtwx_xtwz(x, z, w)?;
@@ -1341,7 +1258,7 @@ mod tests {
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
-            RustyStatsError::DimensionMismatch(_)
+            RustyStatsError::DimensionMismatch { .. }
         ));
     }
 

@@ -76,7 +76,7 @@ pub fn resid_pearson(y: &Array1<f64>, mu: &Array1<f64>, family: &dyn Family) -> 
 
     ndarray::Zip::from(y)
         .and(mu)
-        .and(&variance)
+        .and(&*variance)
         .map_collect(|&yi, &mui, &vi| {
             let std_dev = vi.sqrt().max(ZERO_TOL);
             (yi - mui) / std_dev

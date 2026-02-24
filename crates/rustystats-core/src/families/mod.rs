@@ -42,6 +42,8 @@
 //
 // =============================================================================
 
+use std::borrow::Cow;
+
 use crate::links::Link;
 use ndarray::Array1;
 
@@ -93,12 +95,15 @@ pub trait Family: Send + Sync {
     ///
     /// where φ is the dispersion parameter (φ=1 for Poisson and Binomial).
     ///
+    /// Returns `Cow::Borrowed` when variance equals mu (e.g. Poisson),
+    /// avoiding allocation on the hot path.
+    ///
     /// # Arguments
     /// * `mu` - Array of mean values
     ///
     /// # Returns
-    /// Array of variance function values
-    fn variance(&self, mu: &Array1<f64>) -> Array1<f64>;
+    /// Array of variance function values (borrowed or owned)
+    fn variance<'a>(&self, mu: &'a Array1<f64>) -> Cow<'a, Array1<f64>>;
 
     /// Compute the unit deviance for each observation.
     ///
@@ -221,6 +226,6 @@ pub trait Family: Send + Sync {
     /// Array of optimized IRLS weights
     fn true_hessian_weights(&self, mu: &Array1<f64>, _y: &Array1<f64>) -> Array1<f64> {
         // Default: same as variance (which gives standard IRLS behavior)
-        self.variance(mu)
+        self.variance(mu).into_owned()
     }
 }

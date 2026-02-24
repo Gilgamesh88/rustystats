@@ -11,7 +11,7 @@
 // =============================================================================
 
 use nalgebra::{DMatrix, DVector};
-use ndarray::{Array1, Array2};
+use ndarray::{Array1, Array2, ShapeBuilder};
 
 // =============================================================================
 // ndarray → nalgebra
@@ -42,16 +42,15 @@ pub fn to_dvector(v: &Array1<f64>) -> DVector<f64> {
 // =============================================================================
 
 /// Convert a nalgebra DMatrix to an ndarray Array2.
+///
+/// Uses a single memcpy from nalgebra's column-major storage into a
+/// Fortran-order ndarray, avoiding element-by-element indexing.
 #[inline]
 pub fn to_array2(m: &DMatrix<f64>) -> Array2<f64> {
     let (nrows, ncols) = m.shape();
-    let mut result = Array2::zeros((nrows, ncols));
-    for i in 0..nrows {
-        for j in 0..ncols {
-            result[[i, j]] = m[(i, j)];
-        }
-    }
-    result
+    // nalgebra stores column-major; create column-major ndarray directly
+    Array2::from_shape_vec((nrows, ncols).f(), m.as_slice().to_vec())
+        .expect("DMatrix shape matches data length")
 }
 
 /// Convert a nalgebra DVector to an ndarray Array1.

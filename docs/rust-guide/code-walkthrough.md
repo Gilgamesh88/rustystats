@@ -392,11 +392,9 @@ pub fn fit_glm_full(
     let p = x.ncols();
 
     if x.nrows() != n {
-        return Err(RustyStatsError::DimensionMismatch(format!(
-            "X has {} rows but y has {} elements",
-            x.nrows(),
-            n
-        )));
+        return Err(RustyStatsError::dim_mismatch(
+            n, x.nrows(), "X rows vs y length",
+        ));
     }
 ```
 

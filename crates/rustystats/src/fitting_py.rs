@@ -545,7 +545,7 @@ pub fn fit_cv_path_py<'py>(
                 } else {
                     lp
                 };
-                let mu_val = lp_off.mapv(|x| x.clamp(-700.0, 700.0).exp());
+                let mu_val = thread_link.inverse(&lp_off);
                 let unit_dev = thread_fam.unit_deviance(&y_val, &mu_val);
                 fold_deviances.push(unit_dev.mean().unwrap_or(f64::INFINITY));
             }

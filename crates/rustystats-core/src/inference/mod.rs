@@ -218,6 +218,8 @@ pub fn significance_stars(pvalue: f64) -> &'static str {
 use ndarray::{Array1, Array2};
 use rayon::prelude::*;
 
+use crate::families::Family;
+
 /// Type of heteroscedasticity-consistent (HC) standard errors.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HCType {
@@ -514,7 +516,7 @@ pub fn score_test_continuous(
     mu: &Array1<f64>,
     weights: &Array1<f64>,
     bread: &Array2<f64>,
-    _family: &str,
+    _family: &dyn Family,
 ) -> ScoreTestResult {
     // The score test checks if adding variable z would improve the model.
     //
@@ -603,7 +605,7 @@ pub fn score_test_categorical(
     mu: &Array1<f64>,
     weights: &Array1<f64>,
     bread: &Array2<f64>,
-    family: &str,
+    family: &dyn Family,
 ) -> ScoreTestResult {
     let _n = z_matrix.nrows();
     let k = z_matrix.ncols(); // df = k (number of dummy columns)
@@ -618,8 +620,8 @@ pub fn score_test_categorical(
         };
     }
 
-    // Compute variance function values
-    let variance = compute_variance(mu, family);
+    // Compute variance function values using the Family trait
+    let variance = family.variance(mu);
 
     // Working weights: w_i * V(μ_i)
     let w: Array1<f64> = weights
@@ -733,34 +735,6 @@ pub fn score_test_categorical(
     }
 }
 
-/// Compute variance function for a family
-fn compute_variance(mu: &Array1<f64>, family: &str) -> Array1<f64> {
-    let lower = family.to_lowercase();
-
-    // Handle NegBin with theta parameter
-    if lower.starts_with("negativebinomial")
-        || lower.starts_with("negbinomial")
-        || lower.starts_with("negbin")
-    {
-        let theta = if let Some(start) = lower.find("theta=") {
-            let rest = &lower[start + 6..];
-            let end = rest.find(')').unwrap_or(rest.len());
-            rest[..end].parse::<f64>().unwrap_or(1.0)
-        } else {
-            1.0
-        };
-        return mu.iter().map(|&m| m + m * m / theta).collect();
-    }
-
-    match lower.as_str() {
-        "gaussian" | "normal" => Array1::ones(mu.len()),
-        "poisson" | "quasipoisson" => mu.clone(),
-        "binomial" | "quasibinomial" => mu.iter().map(|&m| m * (1.0 - m).max(1e-10)).collect(),
-        "gamma" => mu.iter().map(|&m| m * m).collect(),
-        _ => mu.clone(), // Default to Poisson-like
-    }
-}
-
 /// Invert a small matrix and compute quadratic form u' A^-1 u
 fn invert_and_quadratic(a: &Array2<f64>, u: &Array1<f64>) -> Option<f64> {
     let k = a.nrows();
@@ -861,6 +835,7 @@ fn chi2_cdf_internal(x: f64, df: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::families::GaussianFamily;
     use approx::assert_abs_diff_eq;
 
     #[test]
@@ -1035,7 +1010,7 @@ mod tests {
         // New variable that explains residuals
         let z: Array1<f64> = (0..n).map(|i| (i as f64).sin()).collect();
 
-        let result = score_test_continuous(&z, &x, &y, &mu, &weights, &bread, "gaussian");
+        let result = score_test_continuous(&z, &x, &y, &mu, &weights, &bread, &GaussianFamily);
 
         // Should produce a valid result
         assert!(result.statistic >= 0.0);
@@ -1058,7 +1033,7 @@ mod tests {
         // Random variable unrelated to (zero) residuals
         let z = Array1::ones(n);
 
-        let result = score_test_continuous(&z, &x, &y, &mu, &weights, &bread, "gaussian");
+        let result = score_test_continuous(&z, &x, &y, &mu, &weights, &bread, &GaussianFamily);
 
         // With zero residuals, score should be 0
         assert_abs_diff_eq!(result.statistic, 0.0, epsilon = 1e-6);
@@ -1097,7 +1072,8 @@ mod tests {
             z_matrix[[i, 1]] = 1.0; // Level 3
         }
 
-        let result = score_test_categorical(&z_matrix, &x, &y, &mu, &weights, &bread, "gaussian");
+        let result =
+            score_test_categorical(&z_matrix, &x, &y, &mu, &weights, &bread, &GaussianFamily);
 
         assert!(result.statistic >= 0.0);
         assert_eq!(result.df, 2);
@@ -1119,7 +1095,8 @@ mod tests {
         let bread = arr2(&[[0.1]]);
         let z_matrix = Array2::zeros((n, 0));
 
-        let result = score_test_categorical(&z_matrix, &x, &y, &mu, &weights, &bread, "gaussian");
+        let result =
+            score_test_categorical(&z_matrix, &x, &y, &mu, &weights, &bread, &GaussianFamily);
 
         assert_eq!(result.df, 0);
         assert_abs_diff_eq!(result.pvalue, 1.0, epsilon = 1e-10);

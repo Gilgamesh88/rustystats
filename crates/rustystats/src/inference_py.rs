@@ -8,6 +8,7 @@
 use numpy::{PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::prelude::*;
 
+use crate::families_py::family_from_name;
 use rustystats_core::diagnostics::{chi2_cdf, f_cdf, t_cdf};
 use rustystats_core::inference::{score_test_categorical, score_test_continuous};
 
@@ -42,6 +43,8 @@ pub fn score_test_continuous_py<'py>(
     bread: PyReadonlyArray2<'py, f64>,
     family: &str,
 ) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    let family_obj = family_from_name(family, 1.5, 1.0)?;
+
     let z_arr = z.as_array().to_owned();
     let x_arr = x.as_array().to_owned();
     let y_arr = y.as_array().to_owned();
@@ -56,7 +59,7 @@ pub fn score_test_continuous_py<'py>(
         &mu_arr,
         &weights_arr,
         &bread_arr,
-        family,
+        &*family_obj,
     );
 
     let dict = pyo3::types::PyDict::new_bound(py);
@@ -95,6 +98,8 @@ pub fn score_test_categorical_py<'py>(
     bread: PyReadonlyArray2<'py, f64>,
     family: &str,
 ) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    let family_obj = family_from_name(family, 1.5, 1.0)?;
+
     let z_arr = z_matrix.as_array().to_owned();
     let x_arr = x.as_array().to_owned();
     let y_arr = y.as_array().to_owned();
@@ -109,7 +114,7 @@ pub fn score_test_categorical_py<'py>(
         &mu_arr,
         &weights_arr,
         &bread_arr,
-        family,
+        &*family_obj,
     );
 
     let dict = pyo3::types::PyDict::new_bound(py);

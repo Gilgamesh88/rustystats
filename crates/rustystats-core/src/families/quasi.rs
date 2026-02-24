@@ -50,6 +50,8 @@
 //
 // =============================================================================
 
+use std::borrow::Cow;
+
 use super::{BinomialFamily, Family, PoissonFamily};
 use crate::links::{Link, LogLink, LogitLink};
 use ndarray::Array1;
@@ -92,10 +94,10 @@ impl Family for QuasiPoissonFamily {
     /// Variance function: V(μ) = μ (same as Poisson)
     ///
     /// The full variance is Var(Y) = φ × μ where φ is estimated.
+    /// Returns `Cow::Borrowed` — zero-copy since variance IS mu.
     #[inline]
-    fn variance(&self, mu: &Array1<f64>) -> Array1<f64> {
-        // Delegate to Poisson - same variance function
-        mu.clone()
+    fn variance<'a>(&self, mu: &'a Array1<f64>) -> Cow<'a, Array1<f64>> {
+        Cow::Borrowed(mu)
     }
 
     /// Unit deviance (same as Poisson)
@@ -181,9 +183,8 @@ impl Family for QuasiBinomialFamily {
     ///
     /// The full variance is Var(Y) = φ × μ(1-μ) where φ is estimated.
     #[inline]
-    fn variance(&self, mu: &Array1<f64>) -> Array1<f64> {
-        // Delegate to Binomial - same variance function
-        mu.mapv(|p| p * (1.0 - p))
+    fn variance<'a>(&self, mu: &'a Array1<f64>) -> Cow<'a, Array1<f64>> {
+        Cow::Owned(mu.mapv(|p| p * (1.0 - p)))
     }
 
     /// Unit deviance (same as Binomial)
@@ -255,9 +256,9 @@ mod tests {
         let var_poisson = poisson.variance(&mu);
 
         // Variance functions should be identical
-        assert_abs_diff_eq!(var_quasi, var_poisson, epsilon = 1e-10);
+        assert_abs_diff_eq!(*var_quasi, *var_poisson, epsilon = 1e-10);
         // V(μ) = μ
-        assert_abs_diff_eq!(var_quasi, mu, epsilon = 1e-10);
+        assert_abs_diff_eq!(*var_quasi, mu, epsilon = 1e-10);
     }
 
     #[test]
@@ -320,7 +321,7 @@ mod tests {
         let var_binomial = binomial.variance(&mu);
 
         // Variance functions should be identical
-        assert_abs_diff_eq!(var_quasi, var_binomial, epsilon = 1e-10);
+        assert_abs_diff_eq!(*var_quasi, *var_binomial, epsilon = 1e-10);
     }
 
     #[test]
@@ -332,7 +333,7 @@ mod tests {
 
         // V(μ) = μ(1-μ)
         let expected = array![0.16, 0.25, 0.16];
-        assert_abs_diff_eq!(var, expected, epsilon = 1e-10);
+        assert_abs_diff_eq!(*var, expected, epsilon = 1e-10);
     }
 
     #[test]

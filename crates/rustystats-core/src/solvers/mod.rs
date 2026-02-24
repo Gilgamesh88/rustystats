@@ -50,8 +50,13 @@ pub use smooth_glm::{
     SmoothTermSpec,
 };
 
+use ndarray::{Array1, ArrayView2};
+use rayon::prelude::*;
+
+use crate::constants::MAX_IRLS_WEIGHT;
+use crate::error::{Result, RustyStatsError};
 use crate::families::Family;
-use ndarray::Array1;
+use crate::links::Link;
 
 /// Safe initialization of μ that works for any family.
 ///
@@ -62,4 +67,158 @@ pub(crate) fn initialize_mu_safe(y: &Array1<f64>, family: &dyn Family) -> Array1
     let y_mean = y.mean().unwrap_or(1.0).max(0.01);
     let raw: Array1<f64> = y.mapv(|yi| (yi + y_mean) / 2.0);
     family.clamp_mu(&raw)
+}
+
+// =============================================================================
+// Shared GLM Input Validation
+// =============================================================================
+
+/// Validated and prepared GLM inputs (offset and weights ready to use).
+pub(crate) struct ValidatedInputs {
+    pub offset: Array1<f64>,
+    pub prior_weights: Array1<f64>,
+}
+
+/// Validate GLM inputs and prepare offset/weights.
+///
+/// Checks dimension compatibility of X, y, offset, and weights.
+/// Returns owned, ready-to-use offset and prior_weights arrays.
+pub(crate) fn validate_glm_inputs(
+    y: &Array1<f64>,
+    x: ArrayView2<'_, f64>,
+    offset: Option<&Array1<f64>>,
+    weights: Option<&Array1<f64>>,
+) -> Result<ValidatedInputs> {
+    let n = y.len();
+    let p = x.ncols();
+
+    if x.nrows() != n {
+        return Err(RustyStatsError::dim_mismatch(
+            n,
+            x.nrows(),
+            "X rows vs y length",
+        ));
+    }
+
+    if n == 0 {
+        return Err(RustyStatsError::EmptyInput("y is empty".to_string()));
+    }
+
+    if p == 0 {
+        return Err(RustyStatsError::EmptyInput("X has no columns".to_string()));
+    }
+
+    let offset_vec = match offset {
+        Some(o) => {
+            if o.len() != n {
+                return Err(RustyStatsError::dim_mismatch(
+                    n,
+                    o.len(),
+                    "offset vs y length",
+                ));
+            }
+            o.clone()
+        }
+        None => Array1::zeros(n),
+    };
+
+    let prior_weights_vec = match weights {
+        Some(w) => {
+            if w.len() != n {
+                return Err(RustyStatsError::dim_mismatch(
+                    n,
+                    w.len(),
+                    "weights vs y length",
+                ));
+            }
+            if w.iter().any(|&x| x < 0.0) {
+                return Err(RustyStatsError::InvalidValue(
+                    "weights must be non-negative".to_string(),
+                ));
+            }
+            w.clone()
+        }
+        None => Array1::ones(n),
+    };
+
+    Ok(ValidatedInputs {
+        offset: offset_vec,
+        prior_weights: prior_weights_vec,
+    })
+}
+
+// =============================================================================
+// Shared IRLS Weight Computation
+// =============================================================================
+
+/// Result of IRLS weight computation for a single iteration.
+pub(crate) struct IRLSWeightResult {
+    pub irls_weights: Array1<f64>,
+    pub combined_weights: Array1<f64>,
+    pub working_response: Array1<f64>,
+}
+
+/// Compute IRLS weights, combined weights, and working response in a single parallel pass.
+///
+/// Supports both Fisher information and true Hessian weighting for Gamma/Tweedie with log link.
+pub(crate) fn compute_irls_weights(
+    y: &Array1<f64>,
+    mu: &Array1<f64>,
+    eta: &Array1<f64>,
+    offset: &Array1<f64>,
+    prior_weights: &Array1<f64>,
+    family: &dyn Family,
+    link: &dyn Link,
+    min_weight: f64,
+) -> IRLSWeightResult {
+    let n = y.len();
+    let link_deriv = link.derivative(mu);
+
+    let use_true_hessian = family.use_true_hessian_weights() && link.name() == "log";
+    let hessian_weights = if use_true_hessian {
+        Some(family.true_hessian_weights(mu, y))
+    } else {
+        None
+    };
+    let variance = if use_true_hessian {
+        None
+    } else {
+        Some(family.variance(mu))
+    };
+
+    let results: Vec<(f64, f64, f64)> = (0..n)
+        .into_par_iter()
+        .map(|i| {
+            let d = link_deriv[i];
+
+            let iw = if let Some(ref hw) = hessian_weights {
+                hw[i].max(min_weight).min(MAX_IRLS_WEIGHT)
+            } else {
+                let v = variance
+                    .as_ref()
+                    .expect("variance present in Fisher branch")[i];
+                (1.0 / (v * d * d)).max(min_weight).min(MAX_IRLS_WEIGHT)
+            };
+
+            let cw = prior_weights[i] * iw;
+            let wr = (eta[i] - offset[i]) + (y[i] - mu[i]) * d;
+
+            (iw, cw, wr)
+        })
+        .collect();
+
+    let mut irls_weights_vec = Vec::with_capacity(n);
+    let mut combined_weights_vec = Vec::with_capacity(n);
+    let mut working_response_vec = Vec::with_capacity(n);
+    for (iw, cw, wr) in results {
+        irls_weights_vec.push(iw);
+        combined_weights_vec.push(cw);
+        working_response_vec.push(wr);
+    }
+
+    IRLSWeightResult {
+        irls_weights: Array1::from_vec(irls_weights_vec),
+        combined_weights: Array1::from_vec(combined_weights_vec),
+        working_response: Array1::from_vec(working_response_vec),
+    }
 }

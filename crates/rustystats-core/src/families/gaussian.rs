@@ -31,6 +31,8 @@
 //
 // =============================================================================
 
+use std::borrow::Cow;
+
 use super::Family;
 use crate::links::{IdentityLink, Link};
 use ndarray::Array1;
@@ -60,8 +62,8 @@ impl Family for GaussianFamily {
     ///
     /// The Gaussian family has constant variance - it doesn't depend on μ.
     /// This is the homoscedasticity assumption of linear regression.
-    fn variance(&self, mu: &Array1<f64>) -> Array1<f64> {
-        Array1::ones(mu.len())
+    fn variance<'a>(&self, mu: &'a Array1<f64>) -> Cow<'a, Array1<f64>> {
+        Cow::Owned(Array1::ones(mu.len()))
     }
 
     /// Unit deviance: (y - μ)²
@@ -121,7 +123,7 @@ mod tests {
 
         // Variance should be 1 everywhere
         let expected = array![1.0, 1.0, 1.0, 1.0, 1.0];
-        assert_abs_diff_eq!(var, expected, epsilon = 1e-10);
+        assert_abs_diff_eq!(*var, expected, epsilon = 1e-10);
     }
 
     #[test]

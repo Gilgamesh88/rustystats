@@ -39,6 +39,8 @@
 //
 // =============================================================================
 
+use std::borrow::Cow;
+
 use super::Family;
 use crate::links::{Link, LogLink};
 use ndarray::Array1;
@@ -68,8 +70,9 @@ impl Family for PoissonFamily {
     ///
     /// This is the defining characteristic of Poisson: variance equals mean.
     /// Higher expected counts have higher variance.
-    fn variance(&self, mu: &Array1<f64>) -> Array1<f64> {
-        mu.clone()
+    /// Returns `Cow::Borrowed` — zero-copy since variance IS mu.
+    fn variance<'a>(&self, mu: &'a Array1<f64>) -> Cow<'a, Array1<f64>> {
+        Cow::Borrowed(mu)
     }
 
     /// Unit deviance: 2 × [y × log(y/μ) - (y - μ)]
@@ -156,7 +159,7 @@ mod tests {
 
         // Variance equals mean for Poisson
         let var = family.variance(&mu);
-        assert_abs_diff_eq!(var, mu, epsilon = 1e-10);
+        assert_abs_diff_eq!(*var, mu, epsilon = 1e-10);
     }
 
     #[test]

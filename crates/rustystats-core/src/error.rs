@@ -26,8 +26,12 @@ pub enum RustyStatsError {
     // -------------------------------------------------------------------------
     /// The input arrays have incompatible shapes.
     /// For example: trying to fit a model where X has 100 rows but y has 50.
-    #[error("Dimension mismatch: {0}")]
-    DimensionMismatch(String),
+    #[error("Dimension mismatch: expected {expected}, got {got} ({context})")]
+    DimensionMismatch {
+        expected: usize,
+        got: usize,
+        context: String,
+    },
 
     /// A value is outside its valid range.
     /// For example: a probability must be between 0 and 1.
@@ -43,8 +47,12 @@ pub enum RustyStatsError {
     // -------------------------------------------------------------------------
     /// The fitting algorithm didn't converge within the maximum iterations.
     /// This might mean: data issues, poor starting values, or need more iterations.
-    #[error("Convergence failed: {0}")]
-    ConvergenceFailure(String),
+    #[error("Convergence failed after {iterations} iterations (tolerance: {tolerance:.2e}, achieved: {achieved:.2e})")]
+    ConvergenceFailure {
+        iterations: usize,
+        tolerance: f64,
+        achieved: f64,
+    },
 
     /// A matrix operation failed (e.g., trying to invert a singular matrix).
     /// This often indicates multicollinearity in the predictor variables.
@@ -66,6 +74,17 @@ pub enum RustyStatsError {
     /// A required parameter is missing.
     #[error("Missing parameter: {0}")]
     MissingParameter(String),
+}
+
+impl RustyStatsError {
+    /// Create a DimensionMismatch error with context.
+    pub fn dim_mismatch(expected: usize, got: usize, context: impl Into<String>) -> Self {
+        Self::DimensionMismatch {
+            expected,
+            got,
+            context: context.into(),
+        }
+    }
 }
 
 /// A convenient Result type that uses our error type.
