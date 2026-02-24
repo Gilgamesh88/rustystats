@@ -713,7 +713,7 @@ class TestRobustSE:
             response="y_pois",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
             data=df, family="poisson",
-        ).fit()
+        ).fit(store_design_matrix=True)
 
         np.testing.assert_allclose(
             rs_res.bse_robust("HC0"), sm_res.bse, rtol=0.05,
@@ -730,7 +730,7 @@ class TestRobustSE:
             response="y_gauss",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
             data=df, family="gaussian",
-        ).fit()
+        ).fit(store_design_matrix=True)
 
         np.testing.assert_allclose(
             rs_res.bse_robust("HC1"), sm_res.bse, rtol=0.05,
@@ -743,7 +743,7 @@ class TestRobustSE:
             response="y_gauss",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
             data=df, family="gaussian",
-        ).fit()
+        ).fit(store_design_matrix=True)
 
         se_hc2 = rs_res.bse_robust("HC2")
         se_hc3 = rs_res.bse_robust("HC3")
