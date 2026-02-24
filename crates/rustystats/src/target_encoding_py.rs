@@ -70,12 +70,7 @@ pub fn target_encode_py<'py>(
         .map(|(k, v)| (k, (v.sum_target, v.count)))
         .collect();
 
-    Ok((
-        enc.values.into_pyarray_bound(py),
-        enc.name,
-        enc.prior,
-        stats,
-    ))
+    Ok((enc.values.into_pyarray(py), enc.name, enc.prior, stats))
 }
 
 /// Apply target encoding to new data using pre-computed statistics.
@@ -119,7 +114,7 @@ pub fn apply_target_encoding_py<'py>(
         values.push(encoded);
     }
 
-    Ok(Array1::from_vec(values).into_pyarray_bound(py))
+    Ok(Array1::from_vec(values).into_pyarray(py))
 }
 
 /// Exposure-weighted target encode categorical variables.
@@ -191,12 +186,7 @@ pub fn target_encode_with_exposure_py<'py>(
         .map(|(k, v)| (k, (v.sum_claims, v.sum_exposure)))
         .collect();
 
-    Ok((
-        enc.values.into_pyarray_bound(py),
-        enc.name,
-        enc.prior,
-        stats,
-    ))
+    Ok((enc.values.into_pyarray(py), enc.name, enc.prior, stats))
 }
 
 /// Apply exposure-weighted target encoding to new data using pre-computed statistics.
@@ -240,7 +230,7 @@ pub fn apply_exposure_weighted_target_encoding_py<'py>(
         values.push(encoded);
     }
 
-    Ok(Array1::from_vec(values).into_pyarray_bound(py))
+    Ok(Array1::from_vec(values).into_pyarray(py))
 }
 
 /// Frequency encode categorical variables.
@@ -276,7 +266,7 @@ pub fn frequency_encode_py<'py>(
     let enc = target_encoding::frequency_encode(&categories, var_name);
 
     Ok((
-        enc.values.into_pyarray_bound(py),
+        enc.values.into_pyarray(py),
         enc.name,
         enc.level_counts,
         enc.max_count,
@@ -314,7 +304,7 @@ pub fn apply_frequency_encoding_py<'py>(
         })
         .collect();
 
-    Ok(Array1::from_vec(values).into_pyarray_bound(py))
+    Ok(Array1::from_vec(values).into_pyarray(py))
 }
 
 /// Target encode a categorical interaction (two variables combined).
@@ -387,12 +377,7 @@ pub fn target_encode_interaction_py<'py>(
         .map(|(k, v)| (k, (v.sum_target, v.count)))
         .collect();
 
-    Ok((
-        enc.values.into_pyarray_bound(py),
-        enc.name,
-        enc.prior,
-        stats,
-    ))
+    Ok((enc.values.into_pyarray(py), enc.name, enc.prior, stats))
 }
 
 /// Target encode a categorical interaction with exposure weighting.
@@ -472,10 +457,5 @@ pub fn target_encode_interaction_with_exposure_py<'py>(
         .map(|(k, v)| (k, (v.sum_claims, v.sum_exposure)))
         .collect();
 
-    Ok((
-        enc.values.into_pyarray_bound(py),
-        enc.name,
-        enc.prior,
-        stats,
-    ))
+    Ok((enc.values.into_pyarray(py), enc.name, enc.prior, stats))
 }

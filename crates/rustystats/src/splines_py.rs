@@ -54,7 +54,7 @@ pub fn bs_py<'py>(
 ) -> PyResult<Bound<'py, PyArray2<f64>>> {
     let x_array = x.as_array().to_owned();
     let result = splines::bs_basis(&x_array, df, degree, boundary_knots, include_intercept);
-    Ok(result.into_pyarray_bound(py))
+    Ok(result.into_pyarray(py))
 }
 
 /// Compute natural cubic spline basis matrix.
@@ -104,7 +104,7 @@ pub fn ns_py<'py>(
 ) -> PyResult<Bound<'py, PyArray2<f64>>> {
     let x_array = x.as_array().to_owned();
     let result = splines::ns_basis(&x_array, df, boundary_knots, include_intercept);
-    Ok(result.into_pyarray_bound(py))
+    Ok(result.into_pyarray(py))
 }
 
 /// Compute natural spline basis with explicit interior knots.
@@ -139,7 +139,7 @@ pub fn ns_with_knots_py<'py>(
     let x_array = x.as_array().to_owned();
     let result =
         splines::ns_basis_with_knots(&x_array, &interior_knots, boundary_knots, include_intercept);
-    Ok(result.into_pyarray_bound(py))
+    Ok(result.into_pyarray(py))
 }
 
 /// Compute B-spline basis with explicit knots.
@@ -173,7 +173,7 @@ pub fn bs_knots_py<'py>(
 ) -> PyResult<Bound<'py, PyArray2<f64>>> {
     let x_array = x.as_array().to_owned();
     let result = splines::bs_with_knots(&x_array, &knots, degree, boundary_knots);
-    Ok(result.into_pyarray_bound(py))
+    Ok(result.into_pyarray(py))
 }
 
 /// Get column names for B-spline basis.
@@ -255,7 +255,7 @@ pub fn ms_py<'py>(
 ) -> PyResult<Bound<'py, PyArray2<f64>>> {
     let x_array = x.as_array().to_owned();
     let result = splines::is_basis(&x_array, df, degree, boundary_knots, increasing);
-    Ok(result.into_pyarray_bound(py))
+    Ok(result.into_pyarray(py))
 }
 
 /// Compute I-spline (monotonic spline) basis with explicit interior knots.
@@ -281,7 +281,7 @@ pub fn ms_with_knots_py<'py>(
         df,
         increasing,
     );
-    Ok(result.into_pyarray_bound(py))
+    Ok(result.into_pyarray(py))
 }
 
 /// Get column names for I-spline (monotonic spline) basis.

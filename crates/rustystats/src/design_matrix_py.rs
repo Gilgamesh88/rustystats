@@ -40,7 +40,7 @@ pub fn encode_categorical_py<'py>(
 )> {
     let enc = design_matrix::encode_categorical(&values, var_name, drop_first);
     Ok((
-        enc.matrix.into_pyarray_bound(py),
+        enc.matrix.into_pyarray(py),
         enc.names,
         enc.indices,
         enc.levels,
@@ -66,7 +66,7 @@ pub fn factorize_strings_py<'py>(
     values: Vec<String>,
 ) -> PyResult<(Vec<String>, Bound<'py, PyArray1<u32>>)> {
     let (levels, codes) = design_matrix::factorize_strings(&values);
-    Ok((levels, codes.into_pyarray_bound(py)))
+    Ok((levels, codes.into_pyarray(py)))
 }
 
 /// Encode categorical from pre-computed indices.
@@ -108,7 +108,7 @@ pub fn encode_categorical_indices_py<'py>(
         var_name,
         drop_first,
     );
-    Ok((enc.matrix.into_pyarray_bound(py), enc.names))
+    Ok((enc.matrix.into_pyarray(py), enc.names))
 }
 
 /// Build categorical × categorical interaction matrix.
@@ -147,7 +147,7 @@ pub fn build_cat_cat_interaction_py<'py>(
     let (matrix, names) = design_matrix::build_categorical_categorical_interaction(
         &idx1_vec, n_levels1, &idx2_vec, n_levels2, &names1, &names2,
     );
-    Ok((matrix.into_pyarray_bound(py), names))
+    Ok((matrix.into_pyarray(py), names))
 }
 
 /// Build categorical × continuous interaction matrix.
@@ -187,7 +187,7 @@ pub fn build_cat_cont_interaction_py<'py>(
         &cat_names,
         cont_name,
     );
-    Ok((matrix.into_pyarray_bound(py), names))
+    Ok((matrix.into_pyarray(py), names))
 }
 
 /// Build continuous × continuous interaction.
@@ -205,7 +205,7 @@ pub fn build_cont_cont_interaction_py<'py>(
     let x2_array = x2.as_array().to_owned();
     let (result, name) =
         design_matrix::build_continuous_continuous_interaction(&x1_array, &x2_array, name1, name2);
-    Ok((result.into_pyarray_bound(py), name))
+    Ok((result.into_pyarray(py), name))
 }
 
 /// Multiply each column of a matrix by a continuous vector.
@@ -227,5 +227,5 @@ pub fn multiply_matrix_by_continuous_py<'py>(
         &matrix_names,
         cont_name,
     );
-    Ok((result.into_pyarray_bound(py), names))
+    Ok((result.into_pyarray(py), names))
 }

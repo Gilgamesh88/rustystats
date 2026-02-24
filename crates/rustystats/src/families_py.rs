@@ -127,7 +127,7 @@ pub(crate) fn default_link_name(family: &str) -> &'static str {
 /// Eliminates ~40 lines of boilerplate per link type.
 macro_rules! impl_py_link {
     ($py_name:ident, $py_str:literal, $inner_type:ty, $inner_expr:expr) => {
-        #[pyclass(name = $py_str)]
+        #[pyclass(name = $py_str, skip_from_py_object)]
         #[derive(Clone)]
         pub struct $py_name {
             inner: $inner_type,
@@ -149,9 +149,7 @@ macro_rules! impl_py_link {
                 py: Python<'py>,
                 mu: PyReadonlyArray1<f64>,
             ) -> Bound<'py, PyArray1<f64>> {
-                self.inner
-                    .link(&mu.as_array().to_owned())
-                    .into_pyarray_bound(py)
+                self.inner.link(&mu.as_array().to_owned()).into_pyarray(py)
             }
 
             fn inverse<'py>(
@@ -161,7 +159,7 @@ macro_rules! impl_py_link {
             ) -> Bound<'py, PyArray1<f64>> {
                 self.inner
                     .inverse(&eta.as_array().to_owned())
-                    .into_pyarray_bound(py)
+                    .into_pyarray(py)
             }
 
             fn derivative<'py>(
@@ -171,7 +169,7 @@ macro_rules! impl_py_link {
             ) -> Bound<'py, PyArray1<f64>> {
                 self.inner
                     .derivative(&mu.as_array().to_owned())
-                    .into_pyarray_bound(py)
+                    .into_pyarray(py)
             }
         }
     };
@@ -194,7 +192,7 @@ impl_py_link!(PyLogitLink, "LogitLink", LogitLink, LogitLink);
 /// Eliminates ~50 lines of boilerplate per family type.
 macro_rules! impl_py_family {
     ($py_name:ident, $py_str:literal, $inner_type:ty, $inner_expr:expr, $default_link:ty) => {
-        #[pyclass(name = $py_str)]
+        #[pyclass(name = $py_str, skip_from_py_object)]
         #[derive(Clone)]
         pub struct $py_name {
             inner: $inner_type,
@@ -219,7 +217,7 @@ macro_rules! impl_py_family {
                 self.inner
                     .variance(&mu.as_array().to_owned())
                     .into_owned()
-                    .into_pyarray_bound(py)
+                    .into_pyarray(py)
             }
 
             fn unit_deviance<'py>(
@@ -230,7 +228,7 @@ macro_rules! impl_py_family {
             ) -> Bound<'py, PyArray1<f64>> {
                 self.inner
                     .unit_deviance(&y.as_array().to_owned(), &mu.as_array().to_owned())
-                    .into_pyarray_bound(py)
+                    .into_pyarray(py)
             }
 
             fn deviance(&self, y: PyReadonlyArray1<f64>, mu: PyReadonlyArray1<f64>) -> f64 {
@@ -309,7 +307,7 @@ impl_py_family!(
 /// >>> import rustystats as rs
 /// >>> # Fit Tweedie with p=1.5 for pure premium
 /// >>> result = rs.glm("y ~ x1 + x2", data, family="tweedie", var_power=1.5).fit()
-#[pyclass(name = "TweedieFamily")]
+#[pyclass(name = "TweedieFamily", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyTweedieFamily {
     inner: TweedieFamily,
@@ -348,7 +346,7 @@ impl PyTweedieFamily {
     ) -> Bound<'py, PyArray1<f64>> {
         let mu_array = mu.as_array().to_owned();
         let result = self.inner.variance(&mu_array);
-        result.into_owned().into_pyarray_bound(py)
+        result.into_owned().into_pyarray(py)
     }
 
     fn unit_deviance<'py>(
@@ -360,7 +358,7 @@ impl PyTweedieFamily {
         let y_array = y.as_array().to_owned();
         let mu_array = mu.as_array().to_owned();
         let result = self.inner.unit_deviance(&y_array, &mu_array);
-        result.into_pyarray_bound(py)
+        result.into_pyarray(py)
     }
 
     fn deviance(&self, y: PyReadonlyArray1<f64>, mu: PyReadonlyArray1<f64>) -> f64 {
@@ -398,7 +396,7 @@ impl PyTweedieFamily {
 /// >>> result = rs.glm("y ~ x1 + x2", data, family="negbinomial", theta=1.0).fit()
 /// >>> # Or use the family object directly
 /// >>> family = rs.families.NegativeBinomial(theta=2.0)
-#[pyclass(name = "NegativeBinomialFamily")]
+#[pyclass(name = "NegativeBinomialFamily", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyNegativeBinomialFamily {
     inner: NegativeBinomialFamily,
@@ -443,7 +441,7 @@ impl PyNegativeBinomialFamily {
     ) -> Bound<'py, PyArray1<f64>> {
         let mu_array = mu.as_array().to_owned();
         let result = self.inner.variance(&mu_array);
-        result.into_owned().into_pyarray_bound(py)
+        result.into_owned().into_pyarray(py)
     }
 
     fn unit_deviance<'py>(
@@ -455,7 +453,7 @@ impl PyNegativeBinomialFamily {
         let y_array = y.as_array().to_owned();
         let mu_array = mu.as_array().to_owned();
         let result = self.inner.unit_deviance(&y_array, &mu_array);
-        result.into_pyarray_bound(py)
+        result.into_pyarray(py)
     }
 
     fn deviance(&self, y: PyReadonlyArray1<f64>, mu: PyReadonlyArray1<f64>) -> f64 {

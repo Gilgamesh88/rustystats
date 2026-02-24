@@ -27,7 +27,7 @@ use crate::families_py::family_from_name;
 ///
 /// Contains coefficients, fitted values, deviance, and diagnostic information.
 /// Use this to make predictions and assess model fit.
-#[pyclass(name = "GLMResults")]
+#[pyclass(name = "GLMResults", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyGLMResults {
     /// Fitted coefficients
@@ -126,13 +126,13 @@ impl PyGLMResults {
     /// For logit link: exp(β) gives odds ratios.
     #[getter]
     fn params<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
-        self.coefficients.clone().into_pyarray_bound(py)
+        self.coefficients.clone().into_pyarray(py)
     }
 
     /// Alias for params (statsmodels compatibility).
     #[getter]
     fn coefficients<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
-        self.coefficients.clone().into_pyarray_bound(py)
+        self.coefficients.clone().into_pyarray(py)
     }
 
     /// Get the fitted values μ = g⁻¹(Xβ).
@@ -140,13 +140,13 @@ impl PyGLMResults {
     /// These are the predicted means on the response scale.
     #[getter]
     fn fittedvalues<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
-        self.fitted_values.clone().into_pyarray_bound(py)
+        self.fitted_values.clone().into_pyarray(py)
     }
 
     /// Get the linear predictor η = Xβ.
     #[getter]
     fn linear_predictor<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
-        self.linear_predictor.clone().into_pyarray_bound(py)
+        self.linear_predictor.clone().into_pyarray(py)
     }
 
     /// Get the model deviance.
@@ -195,7 +195,7 @@ impl PyGLMResults {
     /// For Gaussian/Gamma, estimate φ from residuals.
     #[getter]
     fn cov_params_unscaled<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
-        self.covariance_unscaled.clone().into_pyarray_bound(py)
+        self.covariance_unscaled.clone().into_pyarray(py)
     }
 
     /// Get the design matrix X used in fitting.
@@ -206,7 +206,7 @@ impl PyGLMResults {
     fn get_design_matrix<'py>(&self, py: Python<'py>) -> Option<Bound<'py, PyArray2<f64>>> {
         self.design_matrix
             .as_ref()
-            .map(|dm| dm.clone().into_pyarray_bound(py))
+            .map(|dm| dm.clone().into_pyarray(py))
     }
 
     /// Get the IRLS working weights from the final iteration.
@@ -216,7 +216,7 @@ impl PyGLMResults {
     /// Useful for computing score tests for unfitted factors.
     #[getter]
     fn get_irls_weights<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
-        self.irls_weights.clone().into_pyarray_bound(py)
+        self.irls_weights.clone().into_pyarray(py)
     }
 
     /// Get the dispersion parameter φ for standard error computation.
@@ -250,7 +250,7 @@ impl PyGLMResults {
         let se: Array1<f64> = (0..self.n_params)
             .map(|i| (scale * self.covariance_unscaled[[i, i]]).sqrt())
             .collect();
-        se.into_pyarray_bound(py)
+        se.into_pyarray(py)
     }
 
     /// Get z-statistics (or t-statistics) for coefficients.
@@ -268,7 +268,7 @@ impl PyGLMResults {
                 }
             })
             .collect();
-        t.into_pyarray_bound(py)
+        t.into_pyarray(py)
     }
 
     /// Get p-values for coefficients.
@@ -303,7 +303,7 @@ impl PyGLMResults {
                 }
             })
             .collect();
-        pvals.into_pyarray_bound(py)
+        pvals.into_pyarray(py)
     }
 
     /// Get confidence intervals for coefficients.
@@ -336,7 +336,7 @@ impl PyGLMResults {
             ci[[i, 0]] = lower;
             ci[[i, 1]] = upper;
         }
-        ci.into_pyarray_bound(py)
+        ci.into_pyarray(py)
     }
 
     /// Get significance codes for p-values.
@@ -409,7 +409,7 @@ impl PyGLMResults {
         })?;
 
         let cov = self.compute_robust_cov(hc_type)?;
-        Ok(cov.into_pyarray_bound(py))
+        Ok(cov.into_pyarray(py))
     }
 
     /// Get robust standard errors of coefficients (HC/sandwich estimator).
@@ -460,7 +460,7 @@ impl PyGLMResults {
 
         let cov = self.compute_robust_cov(hc_type)?;
         let se = robust_standard_errors(&cov);
-        Ok(se.into_pyarray_bound(py))
+        Ok(se.into_pyarray(py))
     }
 
     /// Get z/t statistics using robust standard errors.
@@ -496,7 +496,7 @@ impl PyGLMResults {
             .map(|(&c, &s)| if s > 1e-10 { c / s } else { 0.0 })
             .collect();
 
-        Ok(t.into_pyarray_bound(py))
+        Ok(t.into_pyarray(py))
     }
 
     /// Get p-values using robust standard errors.
@@ -539,7 +539,7 @@ impl PyGLMResults {
             })
             .collect();
 
-        Ok(pvals.into_pyarray_bound(py))
+        Ok(pvals.into_pyarray(py))
     }
 
     /// Get confidence intervals using robust standard errors.
@@ -580,7 +580,7 @@ impl PyGLMResults {
             ci[[i, 1]] = upper;
         }
 
-        Ok(ci.into_pyarray_bound(py))
+        Ok(ci.into_pyarray(py))
     }
 
     // =========================================================================
@@ -593,7 +593,7 @@ impl PyGLMResults {
     /// Not standardized.
     fn resid_response<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
         let resid = resid_response(&self.y, &self.fitted_values);
-        resid.into_pyarray_bound(py)
+        resid.into_pyarray(py)
     }
 
     /// Get Pearson residuals: (y - μ) / √V(μ)
@@ -603,7 +603,7 @@ impl PyGLMResults {
     fn resid_pearson<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
         let family = self.get_family();
         let resid = resid_pearson(&self.y, &self.fitted_values, family.as_ref());
-        resid.into_pyarray_bound(py)
+        resid.into_pyarray(py)
     }
 
     /// Get deviance residuals: sign(y - μ) × √d_i
@@ -614,7 +614,7 @@ impl PyGLMResults {
     fn resid_deviance<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
         let family = self.get_family();
         let resid = resid_deviance(&self.y, &self.fitted_values, family.as_ref());
-        resid.into_pyarray_bound(py)
+        resid.into_pyarray(py)
     }
 
     /// Get working residuals: (y - μ) × g'(μ)
@@ -625,7 +625,7 @@ impl PyGLMResults {
         let family = self.get_family();
         let link = family.default_link();
         let resid = resid_working(&self.y, &self.fitted_values, link.as_ref());
-        resid.into_pyarray_bound(py)
+        resid.into_pyarray(py)
     }
 
     // =========================================================================

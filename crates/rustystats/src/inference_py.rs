@@ -62,7 +62,7 @@ pub fn score_test_continuous_py<'py>(
         &*family_obj,
     );
 
-    let dict = pyo3::types::PyDict::new_bound(py);
+    let dict = pyo3::types::PyDict::new(py);
     dict.set_item("statistic", result.statistic)?;
     dict.set_item("df", result.df)?;
     dict.set_item("pvalue", result.pvalue)?;
@@ -117,7 +117,7 @@ pub fn score_test_categorical_py<'py>(
         &*family_obj,
     );
 
-    let dict = pyo3::types::PyDict::new_bound(py);
+    let dict = pyo3::types::PyDict::new(py);
     dict.set_item("statistic", result.statistic)?;
     dict.set_item("df", result.df)?;
     dict.set_item("pvalue", result.pvalue)?;

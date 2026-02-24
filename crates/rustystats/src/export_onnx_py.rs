@@ -299,7 +299,7 @@ pub fn build_onnx_glm_scoring_py<'py>(
         .collect();
 
     let bytes = glm_scoring_bytes(coefs, intercept, n_features, link, family, &meta);
-    Ok(PyBytes::new_bound(py, &bytes))
+    Ok(PyBytes::new(py, &bytes))
 }
 
 /// Generic ONNX graph serializer — Python builds the graph description,
@@ -414,5 +414,5 @@ pub fn serialize_onnx_graph_py<'py>(
         &meta,
     );
 
-    Ok(PyBytes::new_bound(py, &model))
+    Ok(PyBytes::new(py, &model))
 }

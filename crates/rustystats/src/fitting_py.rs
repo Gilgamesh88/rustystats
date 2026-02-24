@@ -36,7 +36,7 @@ fn smooth_result_to_py<'py>(
     py: Python<'py>,
     result: rustystats_core::solvers::SmoothGLMResult,
     store_design_matrix: bool,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let n_obs = result.y.len();
     let n_params = result.coefficients.len();
 
@@ -63,20 +63,20 @@ fn smooth_result_to_py<'py>(
         offset: result.offset,
     };
 
-    let smooth_dict = pyo3::types::PyDict::new_bound(py);
+    let smooth_dict = pyo3::types::PyDict::new(py);
     smooth_dict.set_item("lambdas", result.lambdas)?;
     smooth_dict.set_item("smooth_edfs", result.smooth_edfs)?;
     smooth_dict.set_item("total_edf", result.total_edf)?;
     smooth_dict.set_item("gcv", result.gcv)?;
 
-    let tuple = pyo3::types::PyTuple::new_bound(
+    let tuple = pyo3::types::PyTuple::new(
         py,
         &[
-            glm_result.into_py(py).into_bound(py),
+            Bound::new(py, glm_result)?.into_any(),
             smooth_dict.into_any(),
         ],
-    );
-    Ok(tuple.into())
+    )?;
+    Ok(tuple.unbind().into())
 }
 
 /// Build a SmoothGLMConfig from common parameters.
@@ -414,7 +414,7 @@ pub fn fit_cv_path_py<'py>(
     max_iter: usize,
     tol: f64,
     seed: Option<u64>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let y_array: Array1<f64> = y.as_array().to_owned();
     let x_view = x.as_array(); // Zero-copy view
     let n = y_array.len();
@@ -578,7 +578,7 @@ pub fn fit_cv_path_py<'py>(
         });
     }
 
-    let dict = pyo3::types::PyDict::new_bound(py);
+    let dict = pyo3::types::PyDict::new(py);
     dict.set_item(
         "alphas",
         path_results.iter().map(|r| r.alpha).collect::<Vec<_>>(),
@@ -637,7 +637,7 @@ pub fn fit_smooth_glm_unified_py<'py>(
     lambda_max: f64,
     smooth_monotonicity: Option<Vec<Option<String>>>,
     store_design_matrix: bool,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let y_arr = y.as_array().to_owned();
     let x_view = x_full.as_array(); // Zero-copy view
     let offset_arr = offset.map(|o| o.as_array().to_owned());

@@ -31,16 +31,16 @@ resolver = "2"
 # ndarray: N-dimensional arrays, similar to NumPy for Python
 # We use this for all matrix and vector operations
 # The "approx" feature enables floating-point comparison support for tests
-ndarray = { version = "0.16", features = ["approx"] }
+ndarray = { version = "0.17", features = ["approx"] }
 
 # nalgebra: Pure Rust linear algebra library
 # Used for matrix operations in the IRLS solver (no system dependencies needed!)
 # The matrixmultiply feature enables optimized cache-blocked matrix multiplication
-nalgebra = { version = "0.33", features = ["matrixmultiply"] }
+nalgebra = { version = "0.34", features = ["matrixmultiply"] }
 
 # --- Python Integration ---
-pyo3 = { version = "0.22", features = ["extension-module", "generate-import-lib"] }  # Rust <-> Python bridge
-numpy = "0.22"                             # NumPy array support for PyO3
+pyo3 = { version = "0.28", features = ["extension-module", "generate-import-lib"] }  # Rust <-> Python bridge
+numpy = "0.28"                             # NumPy array support for PyO3
 
 # --- Utilities ---
 thiserror = "2.0"                          # Easy error type definitions
