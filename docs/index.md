@@ -2,16 +2,13 @@
 
 **High-performance Generalized Linear Models with a Rust backend and Python API**
 
-RustyStats is a statistical modeling library designed for actuarial and data science applications. It combines the performance of Rust with the ease of use of Python, providing a `statsmodels`-compatible API with significant performance improvements.
+RustyStats is a statistical modeling library designed for actuarial and data science applications. It combines the performance of Rust with the ease of use of Python.
 
-## Why RustyStats?
+## Key Highlights
 
-| Feature | RustyStats | Statsmodels |
-|---------|------------|-------------|
-| **Parallel IRLS Solver** | ✅ Multi-threaded via Rayon | ❌ Single-threaded |
-| **Native Polars Support** | ✅ Formula API with Polars | ❌ Pandas only |
-| **Built-in Lasso/Elastic Net** | ✅ All GLM families | ⚠️ Limited |
-| **Performance** | 5-23x faster | Baseline |
+- **Parallel IRLS Solver** — Multi-threaded via Rayon
+- **Native Polars Support** — Formula API with Polars DataFrames
+- **Built-in Lasso/Elastic Net** — Regularization across all GLM families
 
 ## Quick Example
 

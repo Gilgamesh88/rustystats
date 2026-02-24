@@ -1,5 +1,7 @@
 # RustyStats 🦀📊
 
+[![CI](https://github.com/PricingFrontier/rustystats/actions/workflows/ci.yml/badge.svg)](https://github.com/PricingFrontier/rustystats/actions/workflows/ci.yml)
+
 **High-performance Generalized Linear Models with a Rust backend and Python API**
 
 **Codebase Documentation**: [pricingfrontier.github.io/rustystats/](https://pricingfrontier.github.io/rustystats/)
@@ -7,8 +9,8 @@
 ## Features
 
 - **Dict-First API** - Programmatic model building ideal for automated workflows and agents
-- **Fast** - Parallel Rust backend, 5-10x faster than statsmodels
-- **Memory Efficient** - 4-5x less RAM than statsmodels at scale
+- **Fast** - Parallel Rust backend for high-throughput fitting
+- **Memory Efficient** - Low memory footprint at scale
 - **Stable** - Step-halving IRLS, warm starts for robust convergence
 - **Splines** - B-splines and natural splines with auto-tuned smoothing and monotonicity
 - **Target Encoding** - Ordered target encoding for high-cardinality categoricals
@@ -560,55 +562,6 @@ preds = session.run(None, {"input": raw})[0]  # shape (3, 1)
 | Categoricals | One-hot dummies | Integer codes |
 | Preprocessing | Consumer handles it | Embedded in graph |
 | Size | Smaller | Larger |
-
----
-
-## Performance Benchmarks
-
-**RustyStats vs Statsmodels** — Synthetic data, 101 features (10 continuous + 10 categorical with 10 levels each).
-
-| Family | 10K rows | 250K rows | 500K rows |
-|--------|----------|-----------|-----------|
-| Gaussian | **18.3x** | **6.4x** | **5.1x** |
-| Poisson | **19.6x** | **7.1x** | **5.2x** |
-| Binomial | **23.5x** | **7.1x** | **5.4x** |
-| Gamma | **9.0x** | **13.4x** | **8.9x** |
-| NegBinomial | **22.5x** | **7.2x** | **5.0x** |
-
-**Average speedup: 10.9x** (range: 5.0x – 23.5x)
-
-### Memory Usage
-
-| Rows | RustyStats | Statsmodels | Reduction |
-|------|------------|-------------|-----------|
-| 10K | 4 MB | 72 MB | **18x** |
-| 250K | 253 MB | 1,796 MB | **7.1x** |
-| 500K | 780 MB | 3,590 MB | **4.6x** |
-
-<details>
-<summary>Full benchmark details</summary>
-
-| Family | Rows | RustyStats | Statsmodels | Speedup |
-|--------|------|------------|-------------|--------|
-| Gaussian | 10,000 | 0.085s | 1.559s | **18.3x** |
-| Gaussian | 250,000 | 1.769s | 11.363s | **6.4x** |
-| Gaussian | 500,000 | 3.399s | 17.386s | **5.1x** |
-| Poisson | 10,000 | 0.137s | 2.692s | **19.6x** |
-| Poisson | 250,000 | 2.128s | 15.072s | **7.1x** |
-| Poisson | 500,000 | 4.581s | 23.693s | **5.2x** |
-| Binomial | 10,000 | 0.093s | 2.189s | **23.5x** |
-| Binomial | 250,000 | 1.851s | 13.155s | **7.1x** |
-| Binomial | 500,000 | 3.842s | 20.862s | **5.4x** |
-| Gamma | 10,000 | 0.486s | 4.353s | **9.0x** |
-| Gamma | 250,000 | 2.377s | 31.885s | **13.4x** |
-| Gamma | 500,000 | 5.202s | 46.167s | **8.9x** |
-| NegBinomial | 10,000 | 0.141s | 3.177s | **22.5x** |
-| NegBinomial | 250,000 | 2.128s | 15.278s | **7.2x** |
-| NegBinomial | 500,000 | 4.900s | 24.331s | **5.0x** |
-
-*Times are median of 3 runs. Benchmark scripts in `benchmarks/`.*
-
-</details>
 
 ---
 
