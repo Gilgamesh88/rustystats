@@ -44,10 +44,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Ruff lint
-        run: uv run ruff check python/
+        run: uvx ruff check python/
 
       - name: Ruff format
-        run: uv run ruff format --check python/
+        run: uvx ruff format --check python/
 
       - name: Run tests
         run: uv run --extra dev pytest -x -q
