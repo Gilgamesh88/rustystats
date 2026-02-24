@@ -10,8 +10,8 @@
 #
 # INSTALLATION:
 # -------------
-# For development: pip install -e . (or: maturin develop)
-# For production:  pip install rustystats
+# For development: uv run maturin develop
+# For production:  uv add rustystats
 # =============================================================================
 
 [build-system]

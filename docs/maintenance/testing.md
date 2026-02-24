@@ -482,7 +482,6 @@ jobs:
       
       - name: Install dependencies
         run: |
-          pip install uv
           uv sync
       
       - name: Run Rust tests

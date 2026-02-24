@@ -212,7 +212,7 @@ stats.print_stats(10)
 #### line_profiler
 
 ```python
-# Install: pip install line_profiler
+# Install: uv add --dev line_profiler
 
 @profile
 def benchmark():

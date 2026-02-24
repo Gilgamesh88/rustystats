@@ -23,9 +23,9 @@ cargo --version
 ```
 
 ### uv (Recommended)
-We use `uv` for Python package management:
+We use `uv` for Python package management. Install via the official installer:
 ```bash
-pip install uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 ## Development Installation
@@ -39,10 +39,6 @@ cd rustystats
 
 # Install in development mode
 uv run maturin develop
-
-# Or with pip
-pip install maturin
-maturin develop
 ```
 
 !!! note "Development Mode"
@@ -93,7 +89,7 @@ If `import rustystats` fails:
 
 1. Ensure you ran `maturin develop` (not just `maturin build`)
 2. Check you're in the correct Python environment
-3. Verify with `pip list | grep rustystats`
+3. Verify with `uv pip list | grep rustystats`
 
 ### Performance Issues
 
