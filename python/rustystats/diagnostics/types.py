@@ -366,8 +366,13 @@ class CoefficientSummary:
     z_value: float
     p_value: float
     significant: bool
-    relativity: float | None
-    relativity_ci: list[float] | None
+    conf_int: list[float] | None = None
+    relativity: float | None = None
+    relativity_ci: list[float] | None = None
+    robust_std_error: float | None = None
+    robust_z_value: float | None = None
+    robust_p_value: float | None = None
+    robust_significant: bool | None = None
 
 
 @dataclass
@@ -498,6 +503,7 @@ class DatasetDiagnostics:
     deviance: float
     log_likelihood: float
     aic: float
+    bic: float
     gini: float
     auc: float
     ae_ratio: float

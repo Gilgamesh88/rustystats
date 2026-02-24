@@ -1039,6 +1039,7 @@ class GLMModel:
         compute_deviance_by_level: bool = True,
         compute_lift: bool = True,
         compute_partial_dep: bool = True,
+        compute_robust_se: bool = True,
         # Base predictions comparison
         base_predictions: str | None = None,
     ) -> ModelDiagnostics:
@@ -1133,6 +1134,7 @@ class GLMModel:
         if self._is_deserialized:
             compute_vif = False
             compute_coefficients = False
+            compute_robust_se = False
 
         return compute_diagnostics(
             result=self,
@@ -1151,6 +1153,7 @@ class GLMModel:
             compute_deviance_by_level=compute_deviance_by_level,
             compute_lift=compute_lift,
             compute_partial_dep=compute_partial_dep,
+            compute_robust_se=compute_robust_se,
             base_predictions=base_predictions,
         )
 

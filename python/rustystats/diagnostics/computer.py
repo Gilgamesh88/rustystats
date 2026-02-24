@@ -7,6 +7,7 @@ unified diagnostics output for fitted GLM models.
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -541,6 +542,10 @@ class DiagnosticsComputer:
             z_val = float(tvalues[i])
             p_val = float(pvalues[i])
 
+            # Confidence interval
+            ci_low = round(float(ci[i, 0]), 6)
+            ci_high = round(float(ci[i, 1]), 6)
+
             # Relativity for log-link models
             rel = None
             rel_ci = None
@@ -556,6 +561,7 @@ class DiagnosticsComputer:
                     z_value=round(z_val, 3),
                     p_value=round(p_val, 4),
                     significant=p_val < 0.05,
+                    conf_int=[ci_low, ci_high],
                     relativity=rel,
                     relativity_ci=rel_ci,
                 )
@@ -566,6 +572,38 @@ class DiagnosticsComputer:
         others = [s for s in summaries if s.feature != "Intercept"]
         others.sort(key=lambda x: -abs(x.z_value))
         return others + intercept
+
+    def enrich_coefficient_summary_with_robust(
+        self,
+        summaries: list[CoefficientSummary],
+        result,
+        cov_type: str = "HC1",
+    ) -> bool:
+        """
+        Enrich coefficient summaries with robust standard errors.
+
+        Modifies summaries in-place. Returns True if enrichment succeeded,
+        False if not available (e.g. lean mode without design matrix).
+        """
+        try:
+            robust_bse = np.asarray(result.bse_robust(cov_type))
+            robust_tvalues = np.asarray(result.tvalues_robust(cov_type))
+            robust_pvalues = np.asarray(result.pvalues_robust(cov_type))
+        except (ValueError, AttributeError):
+            return False
+
+        # Build a lookup by feature name since summaries may be reordered
+        feature_to_idx = {name: i for i, name in enumerate(self.feature_names)}
+
+        for s in summaries:
+            idx = feature_to_idx.get(s.feature)
+            if idx is not None and idx < len(robust_bse):
+                s.robust_std_error = round(float(robust_bse[idx]), 6)
+                s.robust_z_value = round(float(robust_tvalues[idx]), 3)
+                s.robust_p_value = round(float(robust_pvalues[idx]), 4)
+                s.robust_significant = float(robust_pvalues[idx]) < 0.05
+
+        return True
 
     def compute_factor_deviance(
         self,
@@ -981,6 +1019,7 @@ class DiagnosticsComputer:
         mean_deviance = float(dataset_metrics["mean_deviance"])
         log_likelihood = float(dataset_metrics["log_likelihood"])
         aic_val = float(dataset_metrics["aic"])
+        bic_val = -2.0 * log_likelihood + self.n_params * math.log(n_obs) if n_obs > 0 else float("nan")
 
         # Discrimination metrics
         stats = _rust_discrimination_stats(y, mu, exposure)
@@ -1053,6 +1092,7 @@ class DiagnosticsComputer:
             deviance=round(deviance, 2),
             log_likelihood=round(log_likelihood, 2),
             aic=round(aic_val, 2),
+            bic=round(bic_val, 2),
             gini=round(gini, 4),
             auc=round(auc, 4),
             ae_ratio=round(ae_ratio, 4),

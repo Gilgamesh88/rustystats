@@ -350,42 +350,6 @@ if not results['valid']:
 
 ---
 
-## Results
-
-```python
-# Coefficients & Inference
-result.params              # Coefficients
-result.fittedvalues        # Predicted means
-result.deviance            # Model deviance
-result.bse()               # Standard errors
-result.tvalues()           # z-statistics
-result.pvalues()           # P-values
-result.conf_int(alpha)     # Confidence intervals
-
-# Robust Standard Errors (sandwich estimators)
-result.bse_robust("HC1")   # Robust SE (HC0, HC1, HC2, HC3)
-result.tvalues_robust()    # z-stats with robust SE
-result.pvalues_robust()    # P-values with robust SE
-result.conf_int_robust()   # Confidence intervals with robust SE
-result.cov_robust()        # Full robust covariance matrix
-
-# Diagnostics (statsmodels-compatible)
-result.resid_response()    # Raw residuals (y - μ)
-result.resid_pearson()     # Pearson residuals
-result.resid_deviance()    # Deviance residuals
-result.resid_working()     # Working residuals
-result.llf()               # Log-likelihood
-result.aic()               # Akaike Information Criterion
-result.bic()               # Bayesian Information Criterion
-result.null_deviance()     # Null model deviance
-result.pearson_chi2()      # Pearson chi-squared
-result.scale()             # Dispersion (deviance-based)
-result.scale_pearson()     # Dispersion (Pearson-based)
-result.family              # Family name
-```
-
----
-
 ## Model Diagnostics
 
 ```python
@@ -421,6 +385,53 @@ exploration = rs.explore_data(
 - **Interaction Detection**: Greedy residual-based detection of potential interactions
 - **Warnings**: Auto-generated alerts for high dispersion, poor calibration, missing factors
 - **Base Model Comparison**: Compare new model against existing/benchmark predictions
+
+### Diagnostics JSON Shape
+
+The `diagnostics.to_json()` output includes:
+
+```json
+{
+  "model_summary": {
+    "formula": "...", "family": "poisson", "link": "log",
+    "n_obs": 2000, "n_params": 6, "df_resid": 1994,
+    "converged": true, "iterations": 5,
+    "scale": 1.0,
+    "scale_pearson": 1.0148,
+    "null_deviance": 1408.77,
+    "robust_se_type": "HC1"
+  },
+  "train_test": {
+    "train": {
+      "n_obs": 2000, "deviance": 2118.42,
+      "log_likelihood": -1059.21,
+      "aic": 2130.42, "bic": 2162.70,
+      "gini": 0.3241, "auc": 0.6621, "ae_ratio": 1.0
+    }
+  },
+  "coefficient_summary": [
+    {
+      "feature": "Age", "estimate": 0.00996,
+      "std_error": 0.00339, "z_value": 2.941,
+      "p_value": 0.0033, "significant": true,
+      "conf_int": [0.003318, 0.01659],
+      "relativity": 1.01, "relativity_ci": [1.0033, 1.0167],
+      "robust_std_error": 0.003378, "robust_z_value": 2.947,
+      "robust_p_value": 0.0032, "robust_significant": true
+    }
+  ]
+}
+```
+
+- **BIC** (`train_test.train.bic`): Bayesian Information Criterion alongside AIC
+- **Scale** (`model_summary.scale`): Deviance-based dispersion parameter
+- **Scale Pearson** (`model_summary.scale_pearson`): Pearson-based dispersion estimate
+- **Null Deviance** (`model_summary.null_deviance`): Intercept-only model deviance
+- **Confidence Intervals** (`coefficient_summary[].conf_int`): 95% CI `[lower, upper]`
+- **Robust SEs** (`coefficient_summary[].robust_*`): HC1 sandwich estimators for each coefficient
+- **Robust SE Type** (`model_summary.robust_se_type`): Present only when robust SEs were computed
+
+Robust SE fields are `null` when `store_design_matrix=False` (lean mode) or for deserialized models.
 
 ### Comparing Against a Base Model
 

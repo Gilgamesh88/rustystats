@@ -175,6 +175,8 @@ def compute_diagnostics(
     compute_deviance_by_level: bool = True,
     compute_lift: bool = True,
     compute_partial_dep: bool = True,
+    # Robust standard errors
+    compute_robust_se: bool = True,
     # Base predictions comparison (column name in train_data with predictions from another model)
     base_predictions: str | None = None,
 ) -> ModelDiagnostics:
@@ -455,9 +457,16 @@ def compute_diagnostics(
 
     # Coefficient summary
     coef_summary = None
+    robust_se_enriched = False
     if compute_coefficients:
         coef_summary = computer.compute_coefficient_summary(result, link=link)
         # Token optimization: skip weak_predictors warning (agent can infer from sig=False + rel~1.0)
+
+        # Enrich with robust standard errors
+        if compute_robust_se:
+            robust_se_enriched = computer.enrich_coefficient_summary_with_robust(
+                coef_summary, result, cov_type="HC1"
+            )
 
     # Deviance by factor level
     factor_dev = None
@@ -676,6 +685,9 @@ def compute_diagnostics(
         "df_resid": computer.df_resid,
         "converged": converged,
         "iterations": iterations,
+        "scale": round(result.scale(), 6) if hasattr(result, "scale") and callable(getattr(result, "scale", None)) else None,
+        "scale_pearson": round(result.scale_pearson(), 6) if hasattr(result, "scale_pearson") and callable(getattr(result, "scale_pearson", None)) else None,
+        "null_deviance": round(float(null_deviance), 2) if null_deviance is not None else None,
     }
 
     # Add regularization info if present (concise for LLM parsing)
@@ -696,6 +708,10 @@ def compute_diagnostics(
             model_summary["regularization"]["selection"] = getattr(
                 result, "cv_selection_method", None
             )
+
+    # Add robust SE type if enrichment succeeded
+    if robust_se_enriched:
+        model_summary["robust_se_type"] = "HC1"
 
     # Compute overdispersion (for Poisson/Binomial families)
     overdispersion_result = None
