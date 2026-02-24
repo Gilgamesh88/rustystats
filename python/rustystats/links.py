@@ -52,7 +52,7 @@ Examples
 >>> mu = log_link.inverse(eta)
 >>> print(mu)  # [1.0, 1.649, 2.718] - always positive!
 >>>
->>> # Logit link example  
+>>> # Logit link example
 >>> logit_link = rs.links.Logit()
 >>> eta = np.array([-2.0, 0.0, 2.0])
 >>> mu = logit_link.inverse(eta)
@@ -62,36 +62,40 @@ Examples
 # Import the Rust implementations
 from rustystats._rustystats import (
     IdentityLink as _IdentityLink,
-    LogLink as _LogLink,
+)
+from rustystats._rustystats import (
     LogitLink as _LogitLink,
+)
+from rustystats._rustystats import (
+    LogLink as _LogLink,
 )
 
 
 def Identity() -> _IdentityLink:
     """
     Identity link function: η = μ
-    
+
     The simplest link - no transformation at all.
-    
+
     Properties
     ----------
     - Link: η = μ
-    - Inverse: μ = η  
+    - Inverse: μ = η
     - Derivative: dη/dμ = 1
-    
+
     When to Use
     -----------
     - Gaussian family (standard linear regression)
     - When you want to model the mean directly
     - When predictions can be any real value
-    
+
     Interpretation
     --------------
     Coefficients have an additive interpretation:
-    
+
     - If β = 10 for variable X
     - Then a 1-unit increase in X increases the predicted mean by 10
-    
+
     Example
     -------
     >>> link = rs.links.Identity()
@@ -104,49 +108,49 @@ def Identity() -> _IdentityLink:
 def Log() -> _LogLink:
     """
     Log link function: η = log(μ)
-    
+
     Ensures predictions are always positive. The workhorse of actuarial GLMs.
-    
+
     Properties
     ----------
     - Link: η = log(μ)
     - Inverse: μ = exp(η)
     - Derivative: dη/dμ = 1/μ
-    
+
     When to Use
     -----------
     - Poisson family (claim frequency)
     - Gamma family (claim severity)
     - Whenever the response must be positive
-    
+
     Multiplicative Interpretation (Important!)
     ------------------------------------------
     Coefficients represent MULTIPLICATIVE effects (rate relativities):
-    
+
     - If β = 0.2 for "young driver" indicator
     - Then exp(0.2) ≈ 1.22
     - Young drivers have 1.22× the expected count/amount (22% higher)
-    
+
     This is why log link is standard in insurance pricing:
     - Base rate × relativity_1 × relativity_2 × ...
     - On log scale: log(base) + β₁ + β₂ + ...
-    
+
     Combining Frequency and Severity
     --------------------------------
     If both models use log link:
     - Frequency: log(μ_freq) = X β_freq
     - Severity: log(μ_sev) = X β_sev
     - Pure Premium: log(μ_freq × μ_sev) = X (β_freq + β_sev)
-    
+
     The pure premium coefficients are just the SUM!
-    
+
     Example
     -------
     >>> link = rs.links.Log()
-    >>> 
+    >>>
     >>> # If linear predictor η = 0, predicted count/amount = exp(0) = 1
     >>> # If η increases by 0.1, prediction multiplied by exp(0.1) ≈ 1.105
-    >>> 
+    >>>
     >>> eta = np.array([0.0, 0.1, 0.2])
     >>> mu = link.inverse(eta)
     >>> print(mu)  # [1.0, 1.105, 1.221]
@@ -157,59 +161,59 @@ def Log() -> _LogLink:
 def Logit() -> _LogitLink:
     """
     Logit link function: η = log(μ/(1-μ))
-    
+
     Transforms probabilities to the log-odds scale.
     The foundation of logistic regression.
-    
+
     Properties
     ----------
     - Link: η = log(μ/(1-μ)) [the "log-odds"]
     - Inverse: μ = 1/(1+exp(-η)) [the "sigmoid" or "logistic" function]
     - Derivative: dη/dμ = 1/(μ(1-μ))
-    
+
     When to Use
     -----------
     - Binomial family (binary outcomes)
     - Modeling probabilities
     - Yes/no, claim/no-claim type questions
-    
+
     Understanding Log-Odds
     ----------------------
     If μ = 0.8 (80% probability):
     - Odds = μ/(1-μ) = 0.8/0.2 = 4 ("4-to-1 odds")
     - Log-odds = log(4) ≈ 1.39
-    
+
     The logit function maps:
     - μ = 0.5 → η = 0 (even odds)
     - μ → 0 maps to η → -∞
     - μ → 1 maps to η → +∞
-    
+
     Odds Ratio Interpretation
     -------------------------
     Coefficients represent LOG odds ratios:
-    
+
     - If β = 0.5 for "previous claims" indicator
     - Then exp(0.5) ≈ 1.65
     - People with previous claims have 1.65× the ODDS of claiming
     - This is NOT the same as 1.65× the probability!
-    
+
     Converting to Probability Change
     --------------------------------
     The effect on probability depends on the baseline probability:
-    
+
     - At baseline μ=0.1: a β=0.5 coefficient changes probability to ~0.15
     - At baseline μ=0.5: the same β changes probability to ~0.62
-    
+
     This is why we report odds ratios, not probability ratios.
-    
+
     Example
     -------
     >>> link = rs.links.Logit()
-    >>> 
+    >>>
     >>> # η = 0 means 50% probability
     >>> # η = 2 means high probability (about 88%)
     >>> # η = -2 means low probability (about 12%)
-    >>> 
+    >>>
     >>> eta = np.array([-2.0, 0.0, 2.0])
     >>> mu = link.inverse(eta)
     >>> print(mu)  # [0.119, 0.5, 0.881]

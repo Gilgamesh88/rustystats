@@ -49,14 +49,14 @@ use super::initialize_mu_safe;
 //
 // =============================================================================
 
+use nalgebra::{DMatrix, DVector};
 use ndarray::{Array1, Array2, ArrayView2};
 use rayon::prelude::*;
-use nalgebra::{DMatrix, DVector};
 
 use crate::constants::{
-    CONVERGENCE_TOL, MIN_IRLS_WEIGHT, MAX_IRLS_WEIGHT, DEFAULT_MAX_ITER, ZERO_TOL,
+    CONVERGENCE_TOL, DEFAULT_MAX_ITER, MAX_IRLS_WEIGHT, MIN_IRLS_WEIGHT, ZERO_TOL,
 };
-use crate::error::{RustyStatsError, Result};
+use crate::error::{Result, RustyStatsError};
 use crate::families::Family;
 use crate::links::Link;
 use crate::regularization::{Penalty, RegularizationConfig};
@@ -88,13 +88,13 @@ pub struct IRLSConfig {
     /// Whether to print iteration progress.
     /// Default: false
     pub verbose: bool,
-    
+
     /// Coefficient indices that must be non-negative (β ≥ 0).
     /// After each WLS step, these coefficients are projected to max(0, β).
     /// Used for: monotonic splines (ms), pos() terms.
     /// Default: empty (no constraints)
     pub nonneg_indices: Vec<usize>,
-    
+
     /// Coefficient indices that must be non-positive (β ≤ 0).
     /// After each WLS step, these coefficients are projected to min(0, β).
     /// Used for: neg() terms.
@@ -362,10 +362,14 @@ pub fn fit_glm_unified(
         // L1 or Elastic Net → coordinate descent solver
         use super::coordinate_descent::fit_glm_coordinate_descent;
         fit_glm_coordinate_descent(
-            y, x, family, link,
+            y,
+            x,
+            family,
+            link,
             &config.to_irls_config(),
             &config.regularization,
-            offset, weights,
+            offset,
+            weights,
             init_coefficients,
             config.skip_covariance,
         )
@@ -374,11 +378,16 @@ pub fn fit_glm_unified(
         let l2_penalty = config.regularization.penalty.l2_penalty();
         let penalize_intercept = !config.regularization.fit_intercept;
         fit_glm_core(
-            y, x, family, link,
+            y,
+            x,
+            family,
+            link,
             &config.to_irls_config(),
-            offset, weights,
+            offset,
+            weights,
             init_coefficients,
-            l2_penalty, penalize_intercept,
+            l2_penalty,
+            penalize_intercept,
             config.regularization.penalty.clone(),
         )
     }
@@ -471,7 +480,8 @@ fn fit_glm_core(
         if init.len() != p {
             return Err(RustyStatsError::DimensionMismatch(format!(
                 "init_coefficients has {} elements but X has {} columns",
-                init.len(), p
+                init.len(),
+                p
             )));
         }
         let eta_init = x.dot(init) + &offset_vec;
@@ -514,11 +524,11 @@ fn fit_glm_core(
     // We'll store the final covariance matrix and coefficients from iteration
     let mut cov_unscaled = Array2::zeros((p, p));
     let mut final_weights = Array1::zeros(n);
-    let mut iter_coefficients = Array1::zeros(p);  // Store coefficients from iteration
-    
+    let mut iter_coefficients = Array1::zeros(p); // Store coefficients from iteration
+
     // For constrained problems, track best solution seen (deviance can increase due to projection)
     let has_constraints = !config.nonneg_indices.is_empty() || !config.nonpos_indices.is_empty();
-    let mut best_deviance = f64::INFINITY;  // Will be set after first iteration
+    let mut best_deviance = f64::INFINITY; // Will be set after first iteration
     let mut best_coefficients = iter_coefficients.clone();
     let mut best_mu = mu.clone();
     let mut best_eta = eta.clone();
@@ -541,7 +551,7 @@ fn fit_glm_core(
         //     w_i = prior_weight_i × w_irls_i
         // ---------------------------------------------------------------------
         let link_deriv = link.derivative(&mu);
-        
+
         // Check if family supports true Hessian weights (Gamma, Tweedie 1<p<2)
         let use_true_hessian = family.use_true_hessian_weights() && link.name() == "log";
         let hessian_weights = if use_true_hessian {
@@ -549,18 +559,22 @@ fn fit_glm_core(
         } else {
             None
         };
-        let variance = if use_true_hessian { None } else { Some(family.variance(&mu)) };
+        let variance = if use_true_hessian {
+            None
+        } else {
+            Some(family.variance(&mu))
+        };
 
         // PARALLEL: Compute IRLS weights, combined weights, and working response
         // in a single parallel pass to minimize allocation overhead
         let n = y.len();
         let min_weight = config.min_weight;
-        
+
         let results: Vec<(f64, f64, f64)> = (0..n)
             .into_par_iter()
             .map(|i| {
                 let d = link_deriv[i];
-                
+
                 // IRLS weight: use true Hessian if available, else Fisher info
                 let iw = if let Some(ref hw) = hessian_weights {
                     // True Hessian weight - use directly without dividing by d²
@@ -568,21 +582,23 @@ fn fit_glm_core(
                     hw[i].max(min_weight).min(MAX_IRLS_WEIGHT)
                 } else {
                     // Standard Fisher information weight: w = 1/(V(μ) × (dη/dμ)²)
-                    let v = variance.as_ref().unwrap()[i];
+                    let v = variance
+                        .as_ref()
+                        .expect("variance present in Fisher branch")[i];
                     (1.0 / (v * d * d)).max(min_weight).min(MAX_IRLS_WEIGHT)
                 };
-                
+
                 // Combined weight
                 let cw = prior_weights_vec[i] * iw;
-                
+
                 // Working response: z = (η - offset) + (y - μ) × g'(μ)
                 let e = eta[i] - offset_vec[i];
                 let wr = e + (y[i] - mu[i]) * d;
-                
+
                 (iw, cw, wr)
             })
             .collect();
-        
+
         let mut irls_weights_vec = Vec::with_capacity(n);
         let mut combined_weights_vec = Vec::with_capacity(n);
         let mut working_response_vec = Vec::with_capacity(n);
@@ -591,7 +607,7 @@ fn fit_glm_core(
             combined_weights_vec.push(cw);
             working_response_vec.push(wr);
         }
-        
+
         let irls_weights = Array1::from_vec(irls_weights_vec);
         let combined_weights = Array1::from_vec(combined_weights_vec);
         let working_response = Array1::from_vec(working_response_vec);
@@ -602,20 +618,29 @@ fn fit_glm_core(
         // This is the core linear algebra step.
         // We're finding β that minimizes: Σ w_i (z_i - x_i'β)²
         // ---------------------------------------------------------------------
-        let (mut new_coefficients, xtwinv) =
-            solve_weighted_least_squares_penalized(x, &working_response, &combined_weights, l2_penalty, penalize_intercept)?;
+        let (mut new_coefficients, xtwinv) = solve_weighted_least_squares_penalized(
+            x,
+            &working_response,
+            &combined_weights,
+            l2_penalty,
+            penalize_intercept,
+        )?;
 
         // Check for NaN in coefficients - indicates numerical instability
-        if new_coefficients.iter().any(|&c| c.is_nan() || c.is_infinite()) {
+        if new_coefficients
+            .iter()
+            .any(|&c| c.is_nan() || c.is_infinite())
+        {
             return Err(RustyStatsError::NumericalError(
                 "IRLS produced NaN or infinite coefficients. This usually indicates: \
                  (1) severe multicollinearity in predictors, \
                  (2) extreme scale differences between variables, or \
                  (3) separation in binary response data. \
-                 Try standardizing continuous predictors or removing correlated terms.".to_string()
+                 Try standardizing continuous predictors or removing correlated terms."
+                    .to_string(),
             ));
         }
-        
+
         // ---------------------------------------------------------------------
         // Step 4c.1: Apply coefficient sign constraints
         // ---------------------------------------------------------------------
@@ -640,27 +665,28 @@ fn fit_glm_core(
         // projection to ensure constraints are satisfied at each step.
         // ---------------------------------------------------------------------
         deviance_old = deviance;
-        
+
         // Try full step first
         let eta_base = x.dot(&new_coefficients);
         let mut eta_new = &eta_base + &offset_vec;
         let mut mu_new = link.inverse(&eta_new);
         mu_new = family.clamp_mu(&mu_new);
         let mut deviance_new = family.deviance(y, &mu_new, Some(&prior_weights_vec));
-        
+
         // Step-halving: if deviance increased, try smaller steps
         if deviance_new > deviance_old * 1.0001 && iteration > 1 {
             let mut step_size = 0.5;
-            
+
             if has_constraints {
                 // For constrained problems: blend coefficients and re-apply projection
                 for _half_step in 0..8 {
                     // Blend coefficients: β_blend = (1-step)*β_old + step*β_new
-                    let mut blended_coefficients: Array1<f64> = iter_coefficients.iter()
+                    let mut blended_coefficients: Array1<f64> = iter_coefficients
+                        .iter()
                         .zip(new_coefficients.iter())
                         .map(|(&old, &new)| (1.0 - step_size) * old + step_size * new)
                         .collect();
-                    
+
                     // Re-apply coefficient constraints after blending
                     for &idx in &config.nonneg_indices {
                         if idx < blended_coefficients.len() && blended_coefficients[idx] < 0.0 {
@@ -672,13 +698,13 @@ fn fit_glm_core(
                             blended_coefficients[idx] = 0.0;
                         }
                     }
-                    
+
                     let eta_blend = x.dot(&blended_coefficients);
                     eta_new = &eta_blend + &offset_vec;
                     mu_new = link.inverse(&eta_new);
                     mu_new = family.clamp_mu(&mu_new);
                     deviance_new = family.deviance(y, &mu_new, Some(&prior_weights_vec));
-                    
+
                     if deviance_new <= deviance_old * 1.0001 {
                         // Accept this blended step - update new_coefficients
                         new_coefficients = blended_coefficients;
@@ -688,13 +714,15 @@ fn fit_glm_core(
                 }
             } else {
                 // For unconstrained problems: blend eta directly (faster)
-                let eta_old_base: Array1<f64> = eta.iter()
+                let eta_old_base: Array1<f64> = eta
+                    .iter()
                     .zip(offset_vec.iter())
                     .map(|(&e, &o)| e - o)
                     .collect();
-                
+
                 for _half_step in 0..4 {
-                    let eta_blend: Array1<f64> = eta_old_base.iter()
+                    let eta_blend: Array1<f64> = eta_old_base
+                        .iter()
                         .zip(eta_base.iter())
                         .map(|(&old, &new)| (1.0 - step_size) * old + step_size * new)
                         .collect();
@@ -702,7 +730,7 @@ fn fit_glm_core(
                     mu_new = link.inverse(&eta_new);
                     mu_new = family.clamp_mu(&mu_new);
                     deviance_new = family.deviance(y, &mu_new, Some(&prior_weights_vec));
-                    
+
                     if deviance_new <= deviance_old * 1.0001 {
                         break;
                     }
@@ -710,7 +738,7 @@ fn fit_glm_core(
                 }
             }
         }
-        
+
         eta = eta_new;
         mu = mu_new;
         deviance = deviance_new;
@@ -731,7 +759,7 @@ fn fit_glm_core(
 
         // Store coefficients from this iteration
         iter_coefficients = new_coefficients;
-        
+
         // For constrained problems, track the best solution seen
         if has_constraints && deviance < best_deviance {
             best_deviance = deviance;
@@ -757,20 +785,21 @@ fn fit_glm_core(
     // -------------------------------------------------------------------------
     // For constrained problems, use the best solution found during iteration
     // (deviance can increase due to projection, so last iteration may not be best)
-    let (final_mu, final_eta, final_deviance, use_coefficients) = if has_constraints && best_deviance < deviance {
-        // Best solution was found earlier - use it
-        (best_mu, best_eta, best_deviance, best_coefficients)
-    } else {
-        (mu, eta, deviance, iter_coefficients)
-    };
-    
+    let (final_mu, final_eta, final_deviance, use_coefficients) =
+        if has_constraints && best_deviance < deviance {
+            // Best solution was found earlier - use it
+            (best_mu, best_eta, best_deviance, best_coefficients)
+        } else {
+            (mu, eta, deviance, iter_coefficients)
+        };
+
     // Compute working response accounting for offset
     let eta_no_offset: Array1<f64> = final_eta
         .iter()
         .zip(offset_vec.iter())
         .map(|(&e, &o)| e - o)
         .collect();
-    
+
     // Combine prior weights with final IRLS weights
     let combined_final_weights: Array1<f64> = prior_weights_vec
         .iter()
@@ -779,7 +808,13 @@ fn fit_glm_core(
         .collect();
 
     // Try final coefficient extraction, but fall back to iteration coefficients if it produces NaN
-    let final_coefficients = match solve_weighted_least_squares_penalized(x, &compute_working_response(y, &final_mu, &eta_no_offset, link), &combined_final_weights, l2_penalty, penalize_intercept) {
+    let final_coefficients = match solve_weighted_least_squares_penalized(
+        x,
+        &compute_working_response(y, &final_mu, &eta_no_offset, link),
+        &combined_final_weights,
+        l2_penalty,
+        penalize_intercept,
+    ) {
         Ok((coef, _)) if !coef.iter().any(|&c| c.is_nan() || c.is_infinite()) => {
             // For constrained problems, apply projection and check if it's better than stored best
             if has_constraints {
@@ -796,7 +831,11 @@ fn fit_glm_core(
                 }
                 // Check if this extraction is better
                 let eta_check = x.dot(&proj_coef);
-                let eta_full: Array1<f64> = eta_check.iter().zip(offset_vec.iter()).map(|(&e, &o)| e + o).collect();
+                let eta_full: Array1<f64> = eta_check
+                    .iter()
+                    .zip(offset_vec.iter())
+                    .map(|(&e, &o)| e + o)
+                    .collect();
                 let mu_check = link.inverse(&eta_full);
                 let dev_check = family.deviance(y, &mu_check, Some(&prior_weights_vec));
                 if dev_check <= final_deviance {
@@ -807,26 +846,30 @@ fn fit_glm_core(
             } else {
                 coef
             }
-        },
+        }
         _ => {
             // Final extraction failed or produced NaN - use stored coefficients
             eprintln!(
                 "Warning: Final coefficient extraction produced NaN/Inf. \
                 Using coefficients from best iteration instead. This may indicate numerical instability."
             );
-            if use_coefficients.iter().any(|&c| c.is_nan() || c.is_infinite()) {
+            if use_coefficients
+                .iter()
+                .any(|&c| c.is_nan() || c.is_infinite())
+            {
                 return Err(RustyStatsError::NumericalError(
                     "IRLS produced NaN or infinite coefficients. This usually indicates: \
                      (1) severe multicollinearity in predictors, \
                      (2) extreme scale differences between variables, or \
                      (3) separation in binary response data. \
-                     Try standardizing continuous predictors or removing correlated terms.".to_string()
+                     Try standardizing continuous predictors or removing correlated terms."
+                        .to_string(),
                 ));
             }
             use_coefficients
         }
     };
-    
+
     // Apply coefficient sign constraints to final coefficients (for unconstrained path)
     let mut final_coefficients = final_coefficients;
     if !has_constraints {
@@ -841,10 +884,14 @@ fn fit_glm_core(
             }
         }
     }
-    
+
     // Recompute final fitted values and deviance with the chosen coefficients
     let final_eta_base = x.dot(&final_coefficients);
-    let final_eta: Array1<f64> = final_eta_base.iter().zip(offset_vec.iter()).map(|(&e, &o)| e + o).collect();
+    let final_eta: Array1<f64> = final_eta_base
+        .iter()
+        .zip(offset_vec.iter())
+        .map(|(&e, &o)| e + o)
+        .collect();
     let final_mu = link.inverse(&final_eta);
     let final_deviance = family.deviance(y, &final_mu, Some(&prior_weights_vec));
 
@@ -859,10 +906,10 @@ fn fit_glm_core(
         irls_weights: final_weights,
         prior_weights: prior_weights_vec,
         offset: offset_vec,
-        y: y.to_owned(),  // Only clone at the end, needed for diagnostics
+        y: y.to_owned(), // Only clone at the end, needed for diagnostics
         family_name: family.name().to_string(),
         penalty,
-        design_matrix: None,  // Computed lazily in Python layer to avoid expensive copy
+        design_matrix: None, // Computed lazily in Python layer to avoid expensive copy
     })
 }
 
@@ -897,7 +944,7 @@ pub fn compute_xtwx_xtwz(
         Some(s) => s,
         None => {
             return Err(RustyStatsError::LinearAlgebraError(
-                "Design matrix X must be contiguous in memory (C-order)".to_string()
+                "Design matrix X must be contiguous in memory (C-order)".to_string(),
             ));
         }
     };
@@ -905,7 +952,7 @@ pub fn compute_xtwx_xtwz(
         Some(s) => s,
         None => {
             return Err(RustyStatsError::LinearAlgebraError(
-                "Weight vector W must be contiguous in memory".to_string()
+                "Weight vector W must be contiguous in memory".to_string(),
             ));
         }
     };
@@ -913,14 +960,14 @@ pub fn compute_xtwx_xtwz(
         Some(s) => s,
         None => {
             return Err(RustyStatsError::LinearAlgebraError(
-                "Working response Z must be contiguous in memory".to_string()
+                "Working response Z must be contiguous in memory".to_string(),
             ));
         }
     };
-    
+
     const CHUNK_SIZE: usize = 8192;
-    let num_chunks = (n + CHUNK_SIZE - 1) / CHUNK_SIZE;
-    
+    let num_chunks = n.div_ceil(CHUNK_SIZE);
+
     let (xtx_data, xtz_data): (Vec<f64>, Vec<f64>) = (0..num_chunks)
         .into_par_iter()
         .map(|chunk_idx| {
@@ -928,18 +975,18 @@ pub fn compute_xtwx_xtwz(
             let chunk_end = (chunk_start + CHUNK_SIZE).min(n);
             let mut xtx_local = vec![0.0; p * p];
             let mut xtz_local = vec![0.0; p];
-            
+
             for k in chunk_start..chunk_end {
                 let wk = unsafe { *w_slice.get_unchecked(k) };
                 let zk = unsafe { *z_slice.get_unchecked(k) };
                 let wz = wk * zk;
                 let row_start = k * p;
-                
+
                 for i in 0..p {
                     let xki = unsafe { *x_slice.get_unchecked(row_start + i) };
                     let xki_w = xki * wk;
                     unsafe { *xtz_local.get_unchecked_mut(i) += xki * wz };
-                    
+
                     for j in i..p {
                         let xkj = unsafe { *x_slice.get_unchecked(row_start + j) };
                         unsafe { *xtx_local.get_unchecked_mut(i * p + j) += xki_w * xkj };
@@ -960,7 +1007,7 @@ pub fn compute_xtwx_xtwz(
                 (a_xtx, a_xtz)
             },
         );
-    
+
     // Convert to nalgebra symmetric DMatrix
     let mut xtx = DMatrix::zeros(p, p);
     for i in 0..p {
@@ -980,10 +1027,7 @@ pub fn compute_xtwx_xtwz(
 /// Falls back to LU decomposition if Cholesky fails (near-singular systems).
 /// Returns (coefficients, A⁻¹) as ndarray types.
 #[inline]
-fn cholesky_solve(
-    a: DMatrix<f64>,
-    b: &DVector<f64>,
-) -> Result<(Array1<f64>, Array2<f64>)> {
+fn cholesky_solve(a: DMatrix<f64>, b: &DVector<f64>) -> Result<(Array1<f64>, Array2<f64>)> {
     let p = a.nrows();
 
     let chol = match a.clone().cholesky() {
@@ -996,7 +1040,8 @@ fn cholesky_solve(
                     let a_inv = a.try_inverse().ok_or_else(|| {
                         RustyStatsError::LinearAlgebraError(
                             "Failed to compute covariance matrix - system is not invertible. \
-                             This often indicates multicollinearity in predictors.".to_string()
+                             This often indicates multicollinearity in predictors."
+                                .to_string(),
                         )
                     })?;
                     let mut cov_array = Array2::zeros((p, p));
@@ -1010,7 +1055,8 @@ fn cholesky_solve(
                 None => {
                     return Err(RustyStatsError::LinearAlgebraError(
                         "Failed to solve linear system - matrix may be singular. \
-                         This often indicates multicollinearity in predictors.".to_string(),
+                         This often indicates multicollinearity in predictors."
+                            .to_string(),
                     ));
                 }
             }
@@ -1097,7 +1143,10 @@ pub fn solve_weighted_least_squares_with_penalty_matrix(
     if penalty_matrix.nrows() != p || penalty_matrix.ncols() != p {
         return Err(RustyStatsError::DimensionMismatch(format!(
             "Penalty matrix has shape ({}, {}) but expected ({}, {})",
-            penalty_matrix.nrows(), penalty_matrix.ncols(), p, p
+            penalty_matrix.nrows(),
+            penalty_matrix.ncols(),
+            p,
+            p
         )));
     }
 
@@ -1224,11 +1273,22 @@ mod tests {
         let x = Array2::from_shape_vec(
             (5, 2),
             vec![1.0, 1.0, 1.0, 2.0, 1.0, 3.0, 1.0, 4.0, 1.0, 5.0],
-        ).unwrap();
+        )
+        .unwrap();
         let y = array![5.1, 7.9, 11.2, 13.8, 17.1];
 
         let config = FitConfig::default();
-        let result = fit_glm_unified(&y, x.view(), &GaussianFamily, &IdentityLink, &config, None, None, None).unwrap();
+        let result = fit_glm_unified(
+            &y,
+            x.view(),
+            &GaussianFamily,
+            &IdentityLink,
+            &config,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
         assert!(result.converged);
         assert!((result.coefficients[0] - 2.0).abs() < 0.5);
@@ -1240,11 +1300,22 @@ mod tests {
         let x = Array2::from_shape_vec(
             (6, 2),
             vec![1.0, 0.0, 1.0, 1.0, 1.0, 2.0, 1.0, 3.0, 1.0, 4.0, 1.0, 5.0],
-        ).unwrap();
+        )
+        .unwrap();
         let y = array![2.0, 2.0, 3.0, 4.0, 5.0, 7.0];
 
         let config = FitConfig::default();
-        let result = fit_glm_unified(&y, x.view(), &PoissonFamily, &LogLink, &config, None, None, None).unwrap();
+        let result = fit_glm_unified(
+            &y,
+            x.view(),
+            &PoissonFamily,
+            &LogLink,
+            &config,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
         assert!(result.converged);
         assert!(result.fitted_values.iter().all(|&x| x > 0.0));
@@ -1256,19 +1327,42 @@ mod tests {
         let y = array![1.0, 2.0]; // Wrong length!
 
         let config = FitConfig::default();
-        let result = fit_glm_unified(&y, x.view(), &GaussianFamily, &IdentityLink, &config, None, None, None);
+        let result = fit_glm_unified(
+            &y,
+            x.view(),
+            &GaussianFamily,
+            &IdentityLink,
+            &config,
+            None,
+            None,
+            None,
+        );
 
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), RustyStatsError::DimensionMismatch(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            RustyStatsError::DimensionMismatch(_)
+        ));
     }
 
     #[test]
     fn test_convergence_with_max_iter() {
-        let x = Array2::from_shape_vec((4, 2), vec![1.0, 1.0, 1.0, 2.0, 1.0, 3.0, 1.0, 4.0]).unwrap();
+        let x =
+            Array2::from_shape_vec((4, 2), vec![1.0, 1.0, 1.0, 2.0, 1.0, 3.0, 1.0, 4.0]).unwrap();
         let y = array![2.0, 4.0, 6.0, 8.0];
 
         let config = FitConfig::default().with_max_iterations(50);
-        let result = fit_glm_unified(&y, x.view(), &GaussianFamily, &IdentityLink, &config, None, None, None).unwrap();
+        let result = fit_glm_unified(
+            &y,
+            x.view(),
+            &GaussianFamily,
+            &IdentityLink,
+            &config,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
         assert!(result.converged);
         assert!(result.iterations < 10);
@@ -1280,8 +1374,10 @@ mod tests {
 
     fn make_5x2_data() -> (Array2<f64>, Array1<f64>) {
         let x = Array2::from_shape_vec(
-            (5, 2), vec![1.0, 1.0, 1.0, 2.0, 1.0, 3.0, 1.0, 4.0, 1.0, 5.0],
-        ).unwrap();
+            (5, 2),
+            vec![1.0, 1.0, 1.0, 2.0, 1.0, 3.0, 1.0, 4.0, 1.0, 5.0],
+        )
+        .unwrap();
         let y = array![5.0, 8.0, 11.0, 14.0, 17.0];
         (x, y)
     }
@@ -1290,16 +1386,36 @@ mod tests {
     fn test_ridge_shrinks_coefficients() {
         let (x, y) = make_5x2_data();
 
-        let unreg = fit_glm_unified(&y, x.view(), &GaussianFamily, &IdentityLink,
-            &FitConfig::default(), None, None, None).unwrap();
+        let unreg = fit_glm_unified(
+            &y,
+            x.view(),
+            &GaussianFamily,
+            &IdentityLink,
+            &FitConfig::default(),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
-        let ridge = fit_glm_unified(&y, x.view(), &GaussianFamily, &IdentityLink,
+        let ridge = fit_glm_unified(
+            &y,
+            x.view(),
+            &GaussianFamily,
+            &IdentityLink,
             &FitConfig::default().with_regularization(RegularizationConfig::ridge(10.0)),
-            None, None, None).unwrap();
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
-        assert!(ridge.coefficients[1].abs() < unreg.coefficients[1].abs(),
+        assert!(
+            ridge.coefficients[1].abs() < unreg.coefficients[1].abs(),
             "Ridge should shrink slope: ridge={:.4}, unreg={:.4}",
-            ridge.coefficients[1], unreg.coefficients[1]);
+            ridge.coefficients[1],
+            unreg.coefficients[1]
+        );
         assert!(unreg.converged);
         assert!(ridge.converged);
         assert!(!ridge.penalty.is_none());
@@ -1310,17 +1426,38 @@ mod tests {
     fn test_ridge_no_penalty_equals_ols() {
         let (x, y) = make_5x2_data();
 
-        let unreg = fit_glm_unified(&y, x.view(), &GaussianFamily, &IdentityLink,
-            &FitConfig::default(), None, None, None).unwrap();
+        let unreg = fit_glm_unified(
+            &y,
+            x.view(),
+            &GaussianFamily,
+            &IdentityLink,
+            &FitConfig::default(),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
-        let ridge_zero = fit_glm_unified(&y, x.view(), &GaussianFamily, &IdentityLink,
+        let ridge_zero = fit_glm_unified(
+            &y,
+            x.view(),
+            &GaussianFamily,
+            &IdentityLink,
             &FitConfig::default().with_regularization(RegularizationConfig::ridge(0.0)),
-            None, None, None).unwrap();
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
         for i in 0..2 {
-            assert!((unreg.coefficients[i] - ridge_zero.coefficients[i]).abs() < 1e-6,
+            assert!(
+                (unreg.coefficients[i] - ridge_zero.coefficients[i]).abs() < 1e-6,
                 "Coefficient {} differs: unreg={:.6}, ridge={:.6}",
-                i, unreg.coefficients[i], ridge_zero.coefficients[i]);
+                i,
+                unreg.coefficients[i],
+                ridge_zero.coefficients[i]
+            );
         }
     }
 
@@ -1328,28 +1465,62 @@ mod tests {
     fn test_ridge_intercept_not_penalized() {
         let (x, y) = make_5x2_data();
 
-        let unreg = fit_glm_unified(&y, x.view(), &GaussianFamily, &IdentityLink,
-            &FitConfig::default(), None, None, None).unwrap();
+        let unreg = fit_glm_unified(
+            &y,
+            x.view(),
+            &GaussianFamily,
+            &IdentityLink,
+            &FitConfig::default(),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
-        let ridge = fit_glm_unified(&y, x.view(), &GaussianFamily, &IdentityLink,
+        let ridge = fit_glm_unified(
+            &y,
+            x.view(),
+            &GaussianFamily,
+            &IdentityLink,
             &FitConfig::default().with_regularization(RegularizationConfig::ridge(100.0)),
-            None, None, None).unwrap();
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
-        assert!(ridge.coefficients[1].abs() < unreg.coefficients[1].abs() * 0.5,
-            "Slope should be heavily shrunk");
-        assert!(ridge.coefficients[0].abs() > 1.0,
-            "Intercept should not be heavily shrunk: {:.4}", ridge.coefficients[0]);
+        assert!(
+            ridge.coefficients[1].abs() < unreg.coefficients[1].abs() * 0.5,
+            "Slope should be heavily shrunk"
+        );
+        assert!(
+            ridge.coefficients[0].abs() > 1.0,
+            "Intercept should not be heavily shrunk: {:.4}",
+            ridge.coefficients[0]
+        );
     }
 
     #[test]
     fn test_ridge_poisson() {
         let x = Array2::from_shape_vec(
-            (6, 2), vec![1.0, 0.0, 1.0, 1.0, 1.0, 2.0, 1.0, 3.0, 1.0, 4.0, 1.0, 5.0],
-        ).unwrap();
+            (6, 2),
+            vec![1.0, 0.0, 1.0, 1.0, 1.0, 2.0, 1.0, 3.0, 1.0, 4.0, 1.0, 5.0],
+        )
+        .unwrap();
         let y = array![2.0, 3.0, 4.0, 6.0, 8.0, 12.0];
 
         let config = FitConfig::default().with_regularization(RegularizationConfig::ridge(1.0));
-        let result = fit_glm_unified(&y, x.view(), &PoissonFamily, &LogLink, &config, None, None, None).unwrap();
+        let result = fit_glm_unified(
+            &y,
+            x.view(),
+            &PoissonFamily,
+            &LogLink,
+            &config,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
         assert!(result.converged);
         assert!(result.fitted_values.iter().all(|&x| x > 0.0));

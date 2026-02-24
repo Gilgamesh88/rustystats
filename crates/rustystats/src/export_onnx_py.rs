@@ -10,9 +10,9 @@
 //   - serialize_onnx_graph_py:   Generic — Python builds graph, Rust serializes
 // =============================================================================
 
+use numpy::PyReadonlyArray1;
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
-use numpy::PyReadonlyArray1;
 
 // ── Protobuf wire-format primitives ────────────────────────────────────────
 
@@ -88,17 +88,17 @@ const AT_INT: u64 = 2;
 
 /// AttributeProto with a single int value.
 fn onnx_attr_int(name: &str, val: i64) -> Vec<u8> {
-    let mut a = pb_str(1, name);          // name
-    a.extend(pb_uint(3, val as u64));     // i  (field 3)
-    a.extend(pb_uint(20, AT_INT));        // type (field 20)
+    let mut a = pb_str(1, name); // name
+    a.extend(pb_uint(3, val as u64)); // i  (field 3)
+    a.extend(pb_uint(20, AT_INT)); // type (field 20)
     a
 }
 
 /// AttributeProto with a single float value.
 fn onnx_attr_float(name: &str, val: f32) -> Vec<u8> {
-    let mut a = pb_str(1, name);          // name
-    a.extend(pb_f32(2, val));             // f  (field 2)
-    a.extend(pb_uint(20, AT_FLOAT));      // type (field 20)
+    let mut a = pb_str(1, name); // name
+    a.extend(pb_f32(2, val)); // f  (field 2)
+    a.extend(pb_uint(20, AT_FLOAT)); // type (field 20)
     a
 }
 
@@ -107,25 +107,25 @@ fn onnx_shape(dims: &[i64]) -> Vec<u8> {
     let mut buf = Vec::new();
     for &d in dims {
         let dim = if d < 0 {
-            pb_str(2, "batch")            // dim_param (field 2)
+            pb_str(2, "batch") // dim_param (field 2)
         } else {
-            pb_uint(1, d as u64)          // dim_value (field 1)
+            pb_uint(1, d as u64) // dim_value (field 1)
         };
-        buf.extend(pb_msg(1, &dim));      // Dimension (field 1 of TensorShapeProto)
+        buf.extend(pb_msg(1, &dim)); // Dimension (field 1 of TensorShapeProto)
     }
     buf
 }
 
 /// TypeProto for a tensor with the given element type and shape.
 fn onnx_type_tensor(elem_type: u64, dims: &[i64]) -> Vec<u8> {
-    let mut t = pb_uint(1, elem_type);            // elem_type
-    t.extend(pb_msg(2, &onnx_shape(dims)));       // shape
-    pb_msg(1, &t)                                 // TypeProto.tensor_type (field 1)
+    let mut t = pb_uint(1, elem_type); // elem_type
+    t.extend(pb_msg(2, &onnx_shape(dims))); // shape
+    pb_msg(1, &t) // TypeProto.tensor_type (field 1)
 }
 
 /// ValueInfoProto.
 fn onnx_value_info(name: &str, elem_type: u64, dims: &[i64]) -> Vec<u8> {
-    let mut v = pb_str(1, name);                             // name
+    let mut v = pb_str(1, name); // name
     v.extend(pb_msg(2, &onnx_type_tensor(elem_type, dims))); // type
     v
 }
@@ -134,12 +134,12 @@ fn onnx_value_info(name: &str, elem_type: u64, dims: &[i64]) -> Vec<u8> {
 fn onnx_tensor_f64(name: &str, data: &[f64], dims: &[i64]) -> Vec<u8> {
     let mut t = Vec::new();
     for &d in dims {
-        t.extend(pb_uint(1, d as u64));           // dims (field 1, repeated)
+        t.extend(pb_uint(1, d as u64)); // dims (field 1, repeated)
     }
-    t.extend(pb_uint(2, DT_DOUBLE));              // data_type (field 2)
-    t.extend(pb_str(8, name));                    // name (field 8)
+    t.extend(pb_uint(2, DT_DOUBLE)); // data_type (field 2)
+    t.extend(pb_str(8, name)); // name (field 8)
     let raw: Vec<u8> = data.iter().flat_map(|v| v.to_le_bytes()).collect();
-    t.extend(pb_len(9, &raw));                    // raw_data (field 9)
+    t.extend(pb_len(9, &raw)); // raw_data (field 9)
     t
 }
 
@@ -160,14 +160,14 @@ fn onnx_tensor_i64(name: &str, data: &[i64], dims: &[i64]) -> Vec<u8> {
 fn onnx_node(op: &str, inputs: &[&str], outputs: &[&str], attrs: &[Vec<u8>]) -> Vec<u8> {
     let mut n = Vec::new();
     for i in inputs {
-        n.extend(pb_str(1, i));                   // input (field 1, repeated)
+        n.extend(pb_str(1, i)); // input (field 1, repeated)
     }
     for o in outputs {
-        n.extend(pb_str(2, o));                   // output (field 2, repeated)
+        n.extend(pb_str(2, o)); // output (field 2, repeated)
     }
-    n.extend(pb_str(4, op));                      // op_type (field 4)
+    n.extend(pb_str(4, op)); // op_type (field 4)
     for a in attrs {
-        n.extend(pb_msg(5, a));                   // attribute (field 5, repeated)
+        n.extend(pb_msg(5, a)); // attribute (field 5, repeated)
     }
     n
 }
@@ -189,17 +189,17 @@ fn onnx_graph(
 ) -> Vec<u8> {
     let mut g = Vec::new();
     for n in nodes {
-        g.extend(pb_msg(1, n));                   // node (field 1)
+        g.extend(pb_msg(1, n)); // node (field 1)
     }
-    g.extend(pb_str(2, name));                    // name (field 2)
+    g.extend(pb_str(2, name)); // name (field 2)
     for i in inits {
-        g.extend(pb_msg(5, i));                   // initializer (field 5)
+        g.extend(pb_msg(5, i)); // initializer (field 5)
     }
     for i in inputs {
-        g.extend(pb_msg(11, i));                  // input (field 11)
+        g.extend(pb_msg(11, i)); // input (field 11)
     }
     for o in outputs {
-        g.extend(pb_msg(12, o));                  // output (field 12)
+        g.extend(pb_msg(12, o)); // output (field 12)
     }
     g
 }
@@ -213,17 +213,17 @@ fn onnx_model(
     doc: &str,
     meta: &[(&str, &str)],
 ) -> Vec<u8> {
-    let mut m = pb_uint(1, ir_ver);               // ir_version (field 1)
-    m.extend(pb_str(2, producer));                // producer_name (field 2)
+    let mut m = pb_uint(1, ir_ver); // ir_version (field 1)
+    m.extend(pb_str(2, producer)); // producer_name (field 2)
     if !doc.is_empty() {
-        m.extend(pb_str(6, doc));                 // doc_string (field 6)
+        m.extend(pb_str(6, doc)); // doc_string (field 6)
     }
-    m.extend(pb_msg(7, graph));                   // graph (field 7)
-    // opset_import (field 8) — default domain
-    let opset = pb_uint(2, opset_ver);            // OperatorSetIdProto.version
+    m.extend(pb_msg(7, graph)); // graph (field 7)
+                                // opset_import (field 8) — default domain
+    let opset = pb_uint(2, opset_ver); // OperatorSetIdProto.version
     m.extend(pb_msg(8, &opset));
     for &(k, v) in meta {
-        m.extend(pb_msg(14, &onnx_kv(k, v)));    // metadata_props (field 14)
+        m.extend(pb_msg(14, &onnx_kv(k, v))); // metadata_props (field 14)
     }
     m
 }
@@ -257,12 +257,12 @@ fn glm_scoring_bytes(
 
     // Inverse link function
     match link {
-        "log"      => nodes.push(onnx_node("Exp",        &["eta"], &["prediction"], &[])),
-        "logit"    => nodes.push(onnx_node("Sigmoid",    &["eta"], &["prediction"], &[])),
-        "identity" => nodes.push(onnx_node("Identity",   &["eta"], &["prediction"], &[])),
-        "inverse"  => nodes.push(onnx_node("Reciprocal", &["eta"], &["prediction"], &[])),
-        "sqrt"     => nodes.push(onnx_node("Mul",        &["eta", "eta"], &["prediction"], &[])),
-        _          => nodes.push(onnx_node("Exp",        &["eta"], &["prediction"], &[])),
+        "log" => nodes.push(onnx_node("Exp", &["eta"], &["prediction"], &[])),
+        "logit" => nodes.push(onnx_node("Sigmoid", &["eta"], &["prediction"], &[])),
+        "identity" => nodes.push(onnx_node("Identity", &["eta"], &["prediction"], &[])),
+        "inverse" => nodes.push(onnx_node("Reciprocal", &["eta"], &["prediction"], &[])),
+        "sqrt" => nodes.push(onnx_node("Mul", &["eta", "eta"], &["prediction"], &[])),
+        _ => nodes.push(onnx_node("Exp", &["eta"], &["prediction"], &[])),
     }
 
     let graph = onnx_graph("rustystats_glm", &nodes, &inits, &inputs, &outputs);
@@ -325,7 +325,7 @@ pub fn serialize_onnx_graph_py<'py>(
     node_inputs: Vec<Vec<String>>,
     node_outputs: Vec<Vec<String>>,
     node_attr_names: Vec<Vec<String>>,
-    node_attr_types: Vec<Vec<String>>,   // "int" | "float"
+    node_attr_types: Vec<Vec<String>>, // "int" | "float"
     node_attr_ints: Vec<Vec<i64>>,
     node_attr_floats: Vec<Vec<f32>>,
     // ── Initializers (float64) ──
@@ -405,7 +405,14 @@ pub fn serialize_onnx_graph_py<'py>(
         .zip(meta_values.iter())
         .map(|(k, v)| (k.as_str(), v.as_str()))
         .collect();
-    let model = onnx_model(&graph, ir_version, opset_version, &producer, &doc_string, &meta);
+    let model = onnx_model(
+        &graph,
+        ir_version,
+        opset_version,
+        &producer,
+        &doc_string,
+        &meta,
+    );
 
     Ok(PyBytes::new_bound(py, &model))
 }

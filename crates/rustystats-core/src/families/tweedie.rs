@@ -31,10 +31,10 @@
 //
 // =============================================================================
 
-use ndarray::Array1;
+use crate::constants::{MU_MIN_POSITIVE, ZERO_TOL};
 use crate::families::Family;
 use crate::links::{Link, LogLink};
-use crate::constants::{MU_MIN_POSITIVE, ZERO_TOL};
+use ndarray::Array1;
 
 /// Tweedie distribution family.
 ///
@@ -79,7 +79,10 @@ impl TweedieFamily {
     pub fn new(var_power: f64) -> Result<Self, String> {
         // Tweedie is not defined for 0 < p < 1
         if var_power > 0.0 && var_power < 1.0 {
-            return Err(format!("Tweedie var_power must be <= 0 or >= 1, got {}", var_power));
+            return Err(format!(
+                "Tweedie var_power must be <= 0 or >= 1, got {}",
+                var_power
+            ));
         }
         Ok(TweedieFamily { var_power })
     }
@@ -110,40 +113,38 @@ impl Family for TweedieFamily {
     fn unit_deviance(&self, y: &Array1<f64>, mu: &Array1<f64>) -> Array1<f64> {
         let p = self.var_power;
 
-        ndarray::Zip::from(y)
-            .and(mu)
-            .map_collect(|&yi, &mui| {
-                // Ensure positive values for numerical stability
-                let yi_safe = yi.max(0.0);
-                let mui_safe = mui.max(MU_MIN_POSITIVE);
+        ndarray::Zip::from(y).and(mu).map_collect(|&yi, &mui| {
+            // Ensure positive values for numerical stability
+            let yi_safe = yi.max(0.0);
+            let mui_safe = mui.max(MU_MIN_POSITIVE);
 
-                if (p - 0.0).abs() < ZERO_TOL {
-                    // p = 0: Gaussian
-                    let diff = yi_safe - mui_safe;
-                    diff * diff
-                } else if (p - 1.0).abs() < ZERO_TOL {
-                    // p = 1: Poisson
-                    if yi_safe == 0.0 {
-                        2.0 * mui_safe
-                    } else {
-                        2.0 * (yi_safe * (yi_safe / mui_safe).ln() - (yi_safe - mui_safe))
-                    }
-                } else if (p - 2.0).abs() < ZERO_TOL {
-                    // p = 2: Gamma
-                    2.0 * ((yi_safe - mui_safe) / mui_safe - (yi_safe / mui_safe).ln())
+            if (p - 0.0).abs() < ZERO_TOL {
+                // p = 0: Gaussian
+                let diff = yi_safe - mui_safe;
+                diff * diff
+            } else if (p - 1.0).abs() < ZERO_TOL {
+                // p = 1: Poisson
+                if yi_safe == 0.0 {
+                    2.0 * mui_safe
                 } else {
-                    // General case: 1 < p < 2 (compound Poisson-Gamma) or p > 2
-                    let term1 = if yi_safe > 0.0 {
-                        yi_safe.powf(2.0 - p) / ((1.0 - p) * (2.0 - p))
-                    } else {
-                        0.0
-                    };
-                    let term2 = yi_safe * mui_safe.powf(1.0 - p) / (1.0 - p);
-                    let term3 = mui_safe.powf(2.0 - p) / (2.0 - p);
-
-                    2.0 * (term1 - term2 + term3)
+                    2.0 * (yi_safe * (yi_safe / mui_safe).ln() - (yi_safe - mui_safe))
                 }
-            })
+            } else if (p - 2.0).abs() < ZERO_TOL {
+                // p = 2: Gamma
+                2.0 * ((yi_safe - mui_safe) / mui_safe - (yi_safe / mui_safe).ln())
+            } else {
+                // General case: 1 < p < 2 (compound Poisson-Gamma) or p > 2
+                let term1 = if yi_safe > 0.0 {
+                    yi_safe.powf(2.0 - p) / ((1.0 - p) * (2.0 - p))
+                } else {
+                    0.0
+                };
+                let term2 = yi_safe * mui_safe.powf(1.0 - p) / (1.0 - p);
+                let term3 = mui_safe.powf(2.0 - p) / (2.0 - p);
+
+                2.0 * (term1 - term2 + term3)
+            }
+        })
     }
 
     /// Default link for Tweedie is log link.
@@ -163,7 +164,7 @@ impl Family for TweedieFamily {
         y.mapv(|yi| {
             // Weighted average of y and mean, ensuring positive
             let val = (yi + y_mean) / 2.0;
-            val.max(0.001)  // Ensure strictly positive
+            val.max(0.001) // Ensure strictly positive
         })
     }
 
@@ -171,28 +172,30 @@ impl Family for TweedieFamily {
     fn is_valid_mu(&self, mu: &Array1<f64>) -> bool {
         mu.iter().all(|&m| m > 0.0)
     }
-    
+
     fn clamp_mu(&self, mu: &Array1<f64>) -> Array1<f64> {
         use crate::constants::MU_MIN_POSITIVE;
         mu.mapv(|x| x.max(MU_MIN_POSITIVE))
     }
-    
-    fn is_log_link_default(&self) -> bool { true }
-    
+
+    fn is_log_link_default(&self) -> bool {
+        true
+    }
+
     /// Tweedie (1 < p < 2) with log link benefits from true Hessian weights.
-    /// 
+    ///
     /// Using the observed Hessian can significantly reduce IRLS iterations.
     fn use_true_hessian_weights(&self) -> bool {
         // Only enable for 1 < p < 2 (compound Poisson-Gamma) where Hessian is PD
         self.var_power > 1.0 && self.var_power < 2.0
     }
-    
+
     /// For Tweedie with log link, the true Hessian weight is μ^(2-p).
-    /// 
+    ///
     /// Derivation: For Tweedie with variance V(μ) = μ^p and log link:
     ///   - The Hessian of the log-likelihood w.r.t. η involves μ^(2-p)
     ///   - This provides better curvature information than Fisher info
-    /// 
+    ///
     /// For p in (1, 2), this gives weights between μ (p=1, Poisson) and 1 (p=2, Gamma).
     fn true_hessian_weights(&self, mu: &Array1<f64>, _y: &Array1<f64>) -> Array1<f64> {
         let exp = 2.0 - self.var_power;
@@ -207,8 +210,8 @@ impl Family for TweedieFamily {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ndarray::array;
     use approx::assert_abs_diff_eq;
+    use ndarray::array;
 
     #[test]
     fn test_tweedie_variance_power_1_5() {
@@ -218,8 +221,8 @@ mod tests {
         let variance = family.variance(&mu);
 
         // V(μ) = μ^1.5
-        assert_abs_diff_eq!(variance[0], 1.0, epsilon = 1e-10);  // 1^1.5 = 1
-        assert_abs_diff_eq!(variance[1], 8.0, epsilon = 1e-10);  // 4^1.5 = 8
+        assert_abs_diff_eq!(variance[0], 1.0, epsilon = 1e-10); // 1^1.5 = 1
+        assert_abs_diff_eq!(variance[1], 8.0, epsilon = 1e-10); // 4^1.5 = 8
         assert_abs_diff_eq!(variance[2], 27.0, epsilon = 1e-10); // 9^1.5 = 27
     }
 
@@ -269,7 +272,7 @@ mod tests {
     fn test_tweedie_deviance_perfect_fit() {
         let family = TweedieFamily::new(1.5).unwrap();
         let y = array![1.0, 2.0, 3.0];
-        let mu = array![1.0, 2.0, 3.0];  // Perfect fit
+        let mu = array![1.0, 2.0, 3.0]; // Perfect fit
 
         let deviance = family.unit_deviance(&y, &mu);
 
@@ -288,7 +291,7 @@ mod tests {
         let mu = array![1.0, 2.0];
         let eta = link.link(&mu);
 
-        assert_abs_diff_eq!(eta[0], 0.0, epsilon = 1e-10);  // log(1) = 0
+        assert_abs_diff_eq!(eta[0], 0.0, epsilon = 1e-10); // log(1) = 0
         assert_abs_diff_eq!(eta[1], 2.0_f64.ln(), epsilon = 1e-10);
     }
 
@@ -308,7 +311,7 @@ mod tests {
         let family = TweedieFamily::new(1.5).unwrap();
 
         assert!(family.is_valid_mu(&array![0.1, 1.0, 10.0]));
-        assert!(!family.is_valid_mu(&array![0.0, 1.0, 10.0]));  // Zero invalid
+        assert!(!family.is_valid_mu(&array![0.0, 1.0, 10.0])); // Zero invalid
         assert!(!family.is_valid_mu(&array![-1.0, 1.0, 10.0])); // Negative invalid
     }
 

@@ -48,10 +48,10 @@
 //
 // =============================================================================
 
-use ndarray::Array1;
-use crate::links::{Link, LogLink};
-use crate::constants::MU_MIN_POSITIVE;
 use super::Family;
+use crate::constants::MU_MIN_POSITIVE;
+use crate::links::{Link, LogLink};
+use ndarray::Array1;
 
 /// Negative Binomial family for overdispersed count data.
 ///
@@ -98,7 +98,10 @@ impl NegativeBinomialFamily {
     /// Returns an error if theta ≤ 0.
     pub fn new(theta: f64) -> Result<Self, String> {
         if theta <= 0.0 {
-            return Err(format!("Negative Binomial theta must be > 0, got {}", theta));
+            return Err(format!(
+                "Negative Binomial theta must be > 0, got {}",
+                theta
+            ));
         }
         Ok(NegativeBinomialFamily { theta })
     }
@@ -140,21 +143,19 @@ impl Family for NegativeBinomialFamily {
     fn unit_deviance(&self, y: &Array1<f64>, mu: &Array1<f64>) -> Array1<f64> {
         let theta = self.theta;
 
-        ndarray::Zip::from(y)
-            .and(mu)
-            .map_collect(|&yi, &mui| {
-                let mui_safe = mui.max(MU_MIN_POSITIVE);
-                
-                if yi == 0.0 {
-                    // When y = 0: 2θ × log((μ+θ)/θ)
-                    2.0 * theta * ((mui_safe + theta) / theta).ln()
-                } else {
-                    // General case: 2 × [y×log(y/μ) - (y+θ)×log((y+θ)/(μ+θ))]
-                    let term1 = yi * (yi / mui_safe).ln();
-                    let term2 = (yi + theta) * ((yi + theta) / (mui_safe + theta)).ln();
-                    2.0 * (term1 - term2)
-                }
-            })
+        ndarray::Zip::from(y).and(mu).map_collect(|&yi, &mui| {
+            let mui_safe = mui.max(MU_MIN_POSITIVE);
+
+            if yi == 0.0 {
+                // When y = 0: 2θ × log((μ+θ)/θ)
+                2.0 * theta * ((mui_safe + theta) / theta).ln()
+            } else {
+                // General case: 2 × [y×log(y/μ) - (y+θ)×log((y+θ)/(μ+θ))]
+                let term1 = yi * (yi / mui_safe).ln();
+                let term2 = (yi + theta) * ((yi + theta) / (mui_safe + theta)).ln();
+                2.0 * (term1 - term2)
+            }
+        })
     }
 
     /// Default link: Log (same as Poisson).
@@ -173,15 +174,23 @@ impl Family for NegativeBinomialFamily {
     fn is_valid_mu(&self, mu: &Array1<f64>) -> bool {
         mu.iter().all(|&m| m > 0.0 && m.is_finite())
     }
-    
+
     fn clamp_mu(&self, mu: &Array1<f64>) -> Array1<f64> {
         use crate::constants::MU_MIN_POSITIVE;
         mu.mapv(|x| x.max(MU_MIN_POSITIVE))
     }
-    
-    fn is_log_link_default(&self) -> bool { true }
-    
-    fn log_likelihood(&self, y: &Array1<f64>, mu: &Array1<f64>, _scale: f64, weights: Option<&Array1<f64>>) -> f64 {
+
+    fn is_log_link_default(&self) -> bool {
+        true
+    }
+
+    fn log_likelihood(
+        &self,
+        y: &Array1<f64>,
+        mu: &Array1<f64>,
+        _scale: f64,
+        weights: Option<&Array1<f64>>,
+    ) -> f64 {
         crate::diagnostics::nb_loglikelihood(y, mu, self.theta, weights)
     }
 }
@@ -193,8 +202,8 @@ impl Family for NegativeBinomialFamily {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ndarray::array;
     use approx::assert_abs_diff_eq;
+    use ndarray::array;
 
     #[test]
     fn test_negative_binomial_name() {
@@ -204,16 +213,16 @@ mod tests {
 
     #[test]
     fn test_negative_binomial_variance() {
-        let family = NegativeBinomialFamily::new(1.0).unwrap();  // θ = 1, α = 1
+        let family = NegativeBinomialFamily::new(1.0).unwrap(); // θ = 1, α = 1
         let mu = array![1.0, 2.0, 4.0];
 
         let var = family.variance(&mu);
 
         // V(μ) = μ + μ²/θ = μ + μ² (when θ=1)
         let expected = array![
-            1.0 + 1.0,   // 2
-            2.0 + 4.0,   // 6
-            4.0 + 16.0,  // 20
+            1.0 + 1.0,  // 2
+            2.0 + 4.0,  // 6
+            4.0 + 16.0, // 20
         ];
         assert_abs_diff_eq!(var, expected, epsilon = 1e-10);
     }
@@ -240,7 +249,7 @@ mod tests {
 
         // V(μ) = μ + μ²/1000 ≈ μ for large θ
         for (v, m) in var.iter().zip(mu.iter()) {
-            assert!((v - m).abs() < 0.1);  // Close to Poisson variance
+            assert!((v - m).abs() < 0.1); // Close to Poisson variance
         }
     }
 
@@ -248,7 +257,7 @@ mod tests {
     fn test_negative_binomial_deviance_perfect_fit() {
         let family = NegativeBinomialFamily::new(1.0).unwrap();
         let y = array![1.0, 2.0, 3.0];
-        let mu = array![1.0, 2.0, 3.0];  // Perfect fit
+        let mu = array![1.0, 2.0, 3.0]; // Perfect fit
 
         let dev = family.unit_deviance(&y, &mu);
 
@@ -270,7 +279,7 @@ mod tests {
         // But deviance should be positive... let me recalculate
         // Actually: 2θ × log(θ/(μ+θ)) = 2×log(0.5) = 2×(-0.693) = -1.386
         // This is negative, which is wrong. Let me check the formula again.
-        // 
+        //
         // The correct NB deviance for y=0 is:
         // d = 2 × [y×log(y/μ) - (y+θ)×log((y+θ)/(μ+θ))]
         //   = 2 × [0 - θ×log(θ/(μ+θ))]
@@ -304,7 +313,7 @@ mod tests {
         let family = NegativeBinomialFamily::new(1.0).unwrap();
 
         assert!(family.is_valid_mu(&array![0.1, 1.0, 10.0]));
-        assert!(!family.is_valid_mu(&array![0.0, 1.0]));  // Zero invalid
+        assert!(!family.is_valid_mu(&array![0.0, 1.0])); // Zero invalid
         assert!(!family.is_valid_mu(&array![-1.0, 1.0])); // Negative invalid
     }
 

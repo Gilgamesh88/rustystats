@@ -7,7 +7,7 @@ Example
 -------
 >>> import rustystats as rs
 >>> import polars as pl
->>> 
+>>>
 >>> data = pl.read_parquet("insurance_data.parquet")
 >>> result = rs.glm_dict(
 ...     response="ClaimNb",
@@ -26,37 +26,28 @@ Example
 from __future__ import annotations
 
 import weakref
-from typing import Any, TYPE_CHECKING
 from dataclasses import dataclass
-import warnings
+from typing import TYPE_CHECKING, Any
+
 import numpy as np
 
+from rustystats.constants import (
+    DEFAULT_ALPHA_MIN_RATIO,
+    DEFAULT_LAMBDA_MAX,
+    DEFAULT_LAMBDA_MIN,
+    DEFAULT_LINKS,
+    DEFAULT_MAX_ITER,
+    DEFAULT_N_ALPHAS,
+    DEFAULT_N_LAMBDA,
+    DEFAULT_NEGBINOMIAL_THETA,
+    DEFAULT_SPLINE_DF,
+    DEFAULT_TOLERANCE,
+    NEGBINOMIAL_ALIASES,
+)
 from rustystats.exceptions import (
-    ValidationError,
-    FittingError,
     PredictionError,
     SerializationError,
-)
-
-from rustystats.constants import (
-    DEFAULT_NEGBINOMIAL_THETA,
-    DEFAULT_MAX_ITER,
-    DEFAULT_TOLERANCE,
-    DEFAULT_N_ALPHAS,
-    DEFAULT_ALPHA_MIN_RATIO,
-    DEFAULT_SPLINE_DF,
-    DEFAULT_LAMBDA_MIN,
-    DEFAULT_LAMBDA_MAX,
-    DEFAULT_N_LAMBDA,
-    DEFAULT_THETA_TOL,
-    DEFAULT_MAX_THETA_ITER,
-    DEFAULT_N_CALIBRATION_BINS,
-    DEFAULT_N_FACTOR_BINS,
-    DEFAULT_RARE_THRESHOLD_PCT,
-    DEFAULT_MAX_CATEGORICAL_LEVELS,
-    DEFAULT_MAX_INTERACTION_FACTORS,
-    DEFAULT_LINKS,
-    NEGBINOMIAL_ALIASES,
+    ValidationError,
 )
 
 
@@ -68,17 +59,17 @@ def is_negbinomial_family(family: str) -> bool:
 def get_default_link(family: str) -> str:
     """
     Get the canonical default link function for a GLM family.
-    
+
     Parameters
     ----------
     family : str
         Family name (e.g., "gaussian", "poisson", "binomial")
-        
+
     Returns
     -------
     str
         Default link function name (e.g., "identity", "log", "logit")
-        
+
     Raises
     ------
     ValueError
@@ -91,8 +82,7 @@ def get_default_link(family: str) -> str:
     link = DEFAULT_LINKS.get(family_lower)
     if link is None:
         raise ValidationError(
-            f"Unknown family '{family}'. "
-            f"Supported families: {sorted(DEFAULT_LINKS.keys())}"
+            f"Unknown family '{family}'. Supported families: {sorted(DEFAULT_LINKS.keys())}"
         )
     return link
 
@@ -100,19 +90,19 @@ def get_default_link(family: str) -> str:
 def apply_inverse_link(eta: np.ndarray, link: str) -> np.ndarray:
     """
     Apply inverse link function to linear predictor.
-    
+
     Parameters
     ----------
     eta : np.ndarray
         Linear predictor values
     link : str
         Link function name ("identity", "log", "logit", "inverse")
-        
+
     Returns
     -------
     np.ndarray
         Predicted means (mu)
-        
+
     Raises
     ------
     ValidationError
@@ -136,11 +126,12 @@ def apply_inverse_link(eta: np.ndarray, link: str) -> np.ndarray:
 # Lazy imports for optional dependencies
 if TYPE_CHECKING:
     import polars as pl
-    from rustystats.regularization_path import RegularizationPathInfo
+
     from rustystats.diagnostics.types import DataExploration, ModelDiagnostics
+    from rustystats.regularization_path import RegularizationPathInfo
 
 
-def _get_column(data: "pl.DataFrame", column: str) -> np.ndarray:
+def _get_column(data: pl.DataFrame, column: str) -> np.ndarray:
     """Extract a column as numpy array from Polars DataFrame."""
     return data[column].to_numpy()
 
@@ -149,10 +140,10 @@ def _get_column(data: "pl.DataFrame", column: str) -> np.ndarray:
 from rustystats.interactions import InteractionBuilder
 
 
-def _get_constraint_indices(feature_names: List[str]) -> tuple:
+def _get_constraint_indices(feature_names: list[str]) -> tuple:
     """
     Compute coefficient constraint indices from feature names.
-    
+
     Returns
     -------
     nonneg_indices : list[int]
@@ -162,17 +153,19 @@ def _get_constraint_indices(feature_names: List[str]) -> tuple:
     """
     # ms()/ns() with + and pos() terms require non-negative coefficients
     nonneg_indices = [
-        i for i, name in enumerate(feature_names)
-        if name.startswith("pos(") or 
-        (name.startswith("ms(") and ", +)" in name) or
-        (name.startswith("ns(") and ", +)" in name)
+        i
+        for i, name in enumerate(feature_names)
+        if name.startswith("pos(")
+        or (name.startswith("ms(") and ", +)" in name)
+        or (name.startswith("ns(") and ", +)" in name)
     ]
     # ms()/ns() with - and neg() terms require non-positive coefficients
     nonpos_indices = [
-        i for i, name in enumerate(feature_names)
-        if name.startswith("neg(") or
-        (name.startswith("ms(") and ", -)" in name) or
-        (name.startswith("ns(") and ", -)" in name)
+        i
+        for i, name in enumerate(feature_names)
+        if name.startswith("neg(")
+        or (name.startswith("ms(") and ", -)" in name)
+        or (name.startswith("ns(") and ", -)" in name)
     ]
     return nonneg_indices, nonpos_indices
 
@@ -180,6 +173,7 @@ def _get_constraint_indices(feature_names: List[str]) -> tuple:
 @dataclass
 class SmoothTermResult:
     """Result for a single smooth term after fitting."""
+
     variable: str
     k: int
     edf: float
@@ -192,14 +186,14 @@ class SmoothTermResult:
 def _fit_with_fixed_spline_penalties(
     y: np.ndarray,
     X: np.ndarray,
-    spline_terms: List[Any],
-    spline_col_indices: List[tuple],
+    spline_terms: list[Any],
+    spline_col_indices: list[tuple],
     family: str,
     link: str,
     var_power: float,
     theta: float,
-    offset: Optional[np.ndarray],
-    weights: Optional[np.ndarray],
+    offset: np.ndarray | None,
+    weights: np.ndarray | None,
     alpha: float,
     max_iter: int = DEFAULT_MAX_ITER,
     tol: float = DEFAULT_TOLERANCE,
@@ -207,64 +201,74 @@ def _fit_with_fixed_spline_penalties(
 ) -> tuple:
     """
     Fit GLM with fixed-df splines using D'D penalty scaled by alpha.
-    
+
     Instead of scalar ridge (α·I), this applies α·D'D difference penalties
     to spline basis columns. This gives better convergence because the
     penalty structure matches the spline basis.
-    
+
     Uses the same Rust smooth solver as GCV, but with fixed lambdas.
     """
     from rustystats._rustystats import fit_smooth_glm_unified_py as _fit_smooth_unified
-    
+
     penalties = []
     monotonicity_specs = []
     for i, term in enumerate(spline_terms):
         start, end = spline_col_indices[i]
         k = end - start
         penalties.append(term.compute_penalty_matrix(k)[:k, :k])
-        mono = getattr(term, '_smooth_monotonicity', None) or \
-               getattr(term, 'monotonicity', None)
+        mono = getattr(term, "_smooth_monotonicity", None) or getattr(term, "monotonicity", None)
         monotonicity_specs.append(mono)
-    
+
     # Fixed lambda = alpha for all terms (no GCV search)
     # Pass lambda_min = lambda_max = alpha so optimizer returns alpha immediately
     rust_result, smooth_meta = _fit_smooth_unified(
-        y, X, spline_col_indices, penalties, family,
-        link, offset, weights, max_iter, tol,
-        alpha, alpha,  # lambda_min = lambda_max = alpha → fixed lambda
+        y,
+        X,
+        spline_col_indices,
+        penalties,
+        family,
+        link,
+        offset,
+        weights,
+        max_iter,
+        tol,
+        alpha,
+        alpha,  # lambda_min = lambda_max = alpha → fixed lambda
         monotonicity_specs if any(m is not None for m in monotonicity_specs) else None,
         store_design_matrix,
     )
-    
+
     smooth_results = []
     for i, term in enumerate(spline_terms):
         start, end = spline_col_indices[i]
-        smooth_results.append(SmoothTermResult(
-            variable=term.var_name,
-            k=term.df,
-            edf=smooth_meta['smooth_edfs'][i],
-            lambda_=smooth_meta['lambdas'][i],
-            gcv=smooth_meta['gcv'],
-            col_start=start,
-            col_end=end,
-        ))
-        term._lambda = smooth_meta['lambdas'][i]
-        term._edf = smooth_meta['smooth_edfs'][i]
-    
-    return rust_result, smooth_results, smooth_meta['total_edf'], smooth_meta['gcv']
+        smooth_results.append(
+            SmoothTermResult(
+                variable=term.var_name,
+                k=term.df,
+                edf=smooth_meta["smooth_edfs"][i],
+                lambda_=smooth_meta["lambdas"][i],
+                gcv=smooth_meta["gcv"],
+                col_start=start,
+                col_end=end,
+            )
+        )
+        term._lambda = smooth_meta["lambdas"][i]
+        term._edf = smooth_meta["smooth_edfs"][i]
+
+    return rust_result, smooth_results, smooth_meta["total_edf"], smooth_meta["gcv"]
 
 
 def _fit_with_smooth_penalties(
     y: np.ndarray,
     X: np.ndarray,
-    smooth_terms: List[Any],
-    smooth_col_indices: List[tuple],
+    smooth_terms: list[Any],
+    smooth_col_indices: list[tuple],
     family: str,
     link: str,
     var_power: float,
     theta: float,
-    offset: Optional[np.ndarray],
-    weights: Optional[np.ndarray],
+    offset: np.ndarray | None,
+    weights: np.ndarray | None,
     max_iter: int = DEFAULT_MAX_ITER,
     tol: float = DEFAULT_TOLERANCE,
     n_lambda: int = DEFAULT_N_LAMBDA,
@@ -274,11 +278,11 @@ def _fit_with_smooth_penalties(
 ) -> tuple:
     """
     Fit GLM with penalized smooth terms using fast GCV optimization.
-    
+
     Uses a unified Rust entry point that takes the full design matrix and
     smooth term specs (column ranges + penalties + monotonicity). No column
     splitting or coefficient reordering needed.
-    
+
     Parameters
     ----------
     y : array
@@ -293,7 +297,7 @@ def _fit_with_smooth_penalties(
     offset, weights : optional arrays
     max_iter, tol : IRLS parameters
     n_lambda, lambda_min, lambda_max : GCV grid search parameters
-    
+
     Returns
     -------
     result : GLMResult from Rust
@@ -301,11 +305,11 @@ def _fit_with_smooth_penalties(
     total_edf : float
     gcv : float
     """
-    n, p = X.shape
-    n_terms = len(smooth_terms)
-    
+    _n, _p = X.shape
+    len(smooth_terms)
+
     from rustystats._rustystats import fit_smooth_glm_unified_py as _fit_smooth_unified
-    
+
     # Build penalty matrices and monotonicity specs for each smooth term
     penalties = []
     monotonicity_specs = []
@@ -313,37 +317,48 @@ def _fit_with_smooth_penalties(
         start, end = smooth_col_indices[i]
         k = end - start
         penalties.append(term.compute_penalty_matrix(k)[:k, :k])
-        
-        mono = getattr(term, '_smooth_monotonicity', None) or \
-               getattr(term, 'monotonicity', None)
+
+        mono = getattr(term, "_smooth_monotonicity", None) or getattr(term, "monotonicity", None)
         monotonicity_specs.append(mono)
-    
+
     # Call unified Rust solver — full design matrix, no splitting needed
     has_monotonic = any(m is not None for m in monotonicity_specs)
     rust_result, smooth_meta = _fit_smooth_unified(
-        y, X, smooth_col_indices, penalties, family,
-        link, offset, weights, max_iter, tol, lambda_min, lambda_max,
+        y,
+        X,
+        smooth_col_indices,
+        penalties,
+        family,
+        link,
+        offset,
+        weights,
+        max_iter,
+        tol,
+        lambda_min,
+        lambda_max,
         monotonicity_specs if has_monotonic else None,
         store_design_matrix,
     )
-    
+
     # Build smooth term results — coefficients are already in original column order
     smooth_results = []
     for i, term in enumerate(smooth_terms):
         start, end = smooth_col_indices[i]
-        smooth_results.append(SmoothTermResult(
-            variable=term.var_name,
-            k=term.df,
-            edf=smooth_meta['smooth_edfs'][i],
-            lambda_=smooth_meta['lambdas'][i],
-            gcv=smooth_meta['gcv'],
-            col_start=start,
-            col_end=end,
-        ))
-        term._lambda = smooth_meta['lambdas'][i]
-        term._edf = smooth_meta['smooth_edfs'][i]
-    
-    return rust_result, smooth_results, smooth_meta['total_edf'], smooth_meta['gcv']
+        smooth_results.append(
+            SmoothTermResult(
+                variable=term.var_name,
+                k=term.df,
+                edf=smooth_meta["smooth_edfs"][i],
+                lambda_=smooth_meta["lambdas"][i],
+                gcv=smooth_meta["gcv"],
+                col_start=start,
+                col_end=end,
+            )
+        )
+        term._lambda = smooth_meta["lambdas"][i]
+        term._edf = smooth_meta["smooth_edfs"][i]
+
+    return rust_result, smooth_results, smooth_meta["total_edf"], smooth_meta["gcv"]
 
 
 def _fit_glm_core(
@@ -353,22 +368,22 @@ def _fit_glm_core(
     link: str,
     var_power: float,
     theta: float,
-    offset: Optional[np.ndarray],
-    weights: Optional[np.ndarray],
+    offset: np.ndarray | None,
+    weights: np.ndarray | None,
     alpha: float,
     l1_ratio: float,
     max_iter: int,
     tol: float,
-    feature_names: List[str],
-    builder: "InteractionBuilder",
+    feature_names: list[str],
+    builder: InteractionBuilder,
     store_design_matrix: bool = False,
 ) -> tuple:
     """
     Core GLM fitting logic for FormulaGLMDict.
-    
+
     Handles smooth term fitting with GCV-based lambda selection and
     standard fitting with coefficient constraints.
-    
+
     Returns
     -------
     result : GLMResult
@@ -382,33 +397,52 @@ def _fit_glm_core(
     """
     from rustystats._rustystats import fit_glm_py as _fit_glm_rust
     from rustystats.validation import validate_glm_inputs
-    
+
     # Validate inputs before fitting - catches NaN, Inf, invalid response values, etc.
     # Note: is_exposure_offset=False because offset is already log-transformed by _process_offset
     # (raw exposure validation happens there before log-transform)
     y, X, weights, offset = validate_glm_inputs(
         y, X, family, weights, offset, feature_names, is_exposure_offset=False
     )
-    
+
     # Check for smooth terms (s() terms with automatic lambda selection)
     smooth_terms, smooth_col_indices = builder.get_smooth_terms()
-    
+
     if smooth_terms and alpha == 0.0:
         # Use penalized fitting with GCV-based lambda selection
         result, smooth_results, total_edf, gcv = _fit_with_smooth_penalties(
-            y, X, smooth_terms, smooth_col_indices,
-            family, link, var_power, theta,
-            offset, weights, max_iter, tol,
+            y,
+            X,
+            smooth_terms,
+            smooth_col_indices,
+            family,
+            link,
+            var_power,
+            theta,
+            offset,
+            weights,
+            max_iter,
+            tol,
             store_design_matrix=store_design_matrix,
         )
         return result, smooth_results, total_edf, gcv
-    
+
     # Standard fitting (no smooth terms or regularization already applied)
     nonneg_indices, nonpos_indices = _get_constraint_indices(feature_names)
-    
+
     result = _fit_glm_rust(
-        y, X, family, link, var_power, theta,
-        offset, weights, alpha, l1_ratio, max_iter, tol,
+        y,
+        X,
+        family,
+        link,
+        var_power,
+        theta,
+        offset,
+        weights,
+        alpha,
+        l1_ratio,
+        max_iter,
+        tol,
         nonneg_indices if nonneg_indices else None,
         nonpos_indices if nonpos_indices else None,
         store_design_matrix,
@@ -418,25 +452,25 @@ def _fit_glm_core(
 
 def _build_results(
     result: Any,
-    feature_names: List[str],
+    feature_names: list[str],
     formula: str,
     family: str,
-    link: Optional[str],
-    builder: "InteractionBuilder",
-    offset_spec: Optional[Union[str, np.ndarray]],
+    link: str | None,
+    builder: InteractionBuilder,
+    offset_spec: str | np.ndarray | None,
     is_exposure_offset: bool,
-    path_info: Optional["RegularizationPathInfo"],
-    smooth_results: Optional[List["SmoothTermResult"]],
-    total_edf: Optional[float],
-    gcv: Optional[float],
-    terms_dict: Optional[Dict[str, Dict[str, Any]]] = None,
-    interactions_spec: Optional[List[Dict[str, Any]]] = None,
-) -> "GLMModel":
+    path_info: RegularizationPathInfo | None,
+    smooth_results: list[SmoothTermResult] | None,
+    total_edf: float | None,
+    gcv: float | None,
+    terms_dict: dict[str, dict[str, Any]] | None = None,
+    interactions_spec: list[dict[str, Any]] | None = None,
+) -> GLMModel:
     """Build GLMModel with all metadata."""
     # Clear builder caches to free memory (keep TE stats for prediction)
     if builder is not None:
         builder.clear_caches()
-    
+
     return GLMModel(
         result=result,
         feature_names=feature_names,
@@ -458,13 +492,13 @@ def _build_results(
 class _GLMBase:
     """
     Base class for FormulaGLMDict.
-    
+
     Provides data access, offset/weights processing, and CV path handling.
     Subclasses must set: _data_ref, family, link, _offset_spec, _seed.
     """
-    
+
     @property
-    def data(self) -> "pl.DataFrame":
+    def data(self) -> pl.DataFrame:
         """Access the original DataFrame (may raise if garbage collected)."""
         d = self._data_ref()
         if d is None:
@@ -473,7 +507,7 @@ class _GLMBase:
                 "Keep a reference to the DataFrame if you need to access it after fitting."
             )
         return d
-    
+
     def _uses_log_link(self) -> bool:
         """Check if model uses log link (explicit or canonical)."""
         if self.link == "log":
@@ -481,21 +515,21 @@ class _GLMBase:
         if self.link is None and self.family in ("poisson", "quasipoisson", "negbinomial", "gamma"):
             return True
         return False
-    
+
     def _process_offset(
         self,
-        offset: Optional[Union[str, np.ndarray]],
-    ) -> Optional[np.ndarray]:
+        offset: str | np.ndarray | None,
+    ) -> np.ndarray | None:
         """Process offset specification, applying log for log-link families.
-        
+
         For log-link families (Poisson, Gamma, etc.), exposure must be strictly
         positive before log-transform. Validation is done here on raw values.
         """
         from rustystats.exceptions import ValidationError
-        
+
         if offset is None:
             return None
-        
+
         if isinstance(offset, str):
             offset_values = _get_column(self.data, offset)
             if self._uses_log_link():
@@ -511,11 +545,11 @@ class _GLMBase:
             return offset_values.astype(np.float64)
         else:
             return np.asarray(offset, dtype=np.float64)
-    
+
     def _process_weights(
         self,
-        weights: Optional[Union[str, np.ndarray]],
-    ) -> Optional[np.ndarray]:
+        weights: str | np.ndarray | None,
+    ) -> np.ndarray | None:
         """Process weights specification."""
         if weights is None:
             return None
@@ -523,11 +557,11 @@ class _GLMBase:
             return _get_column(self.data, weights).astype(np.float64)
         else:
             return np.asarray(weights, dtype=np.float64)
-    
+
     def _get_raw_exposure(
         self,
-        offset: Optional[Union[str, np.ndarray]],
-    ) -> Optional[np.ndarray]:
+        offset: str | np.ndarray | None,
+    ) -> np.ndarray | None:
         """Get raw exposure values for target encoding (before log transform)."""
         if offset is None:
             return None
@@ -535,41 +569,41 @@ class _GLMBase:
             return _get_column(self.data, offset).astype(np.float64)
         else:
             return np.asarray(offset, dtype=np.float64)
-    
+
     def _resolve_cv_path(
         self,
         alpha: float,
         l1_ratio: float,
         max_iter: int,
         tol: float,
-        cv: Optional[int],
+        cv: int | None,
         selection: str,
-        regularization: Optional[str],
+        regularization: str | None,
         n_alphas: int,
         alpha_min_ratio: float,
-        cv_seed: Optional[int],
+        cv_seed: int | None,
         include_unregularized: bool,
         verbose: bool,
     ) -> tuple:
         """
         Handle CV-based regularization path if requested.
-        
+
         Returns (alpha, l1_ratio, path_info) with updated alpha/l1_ratio
         from CV selection, or original values if no CV.
         """
         if regularization is not None and cv is None:
             cv = 5
-        
+
         if cv is None:
             return alpha, l1_ratio, None
-        
+
         if regularization is None:
             raise ValidationError(
                 "When cv is specified, 'regularization' must be set to 'ridge', 'lasso', or 'elastic_net'"
             )
-        
+
         from rustystats.regularization_path import fit_cv_regularization_path
-        
+
         if regularization == "ridge":
             cv_l1_ratio = 0.0
         elif regularization == "lasso":
@@ -578,7 +612,7 @@ class _GLMBase:
             cv_l1_ratio = l1_ratio if l1_ratio > 0 else 0.5
         else:
             raise ValidationError(f"Unknown regularization type: {regularization}")
-        
+
         path_info = fit_cv_regularization_path(
             glm_instance=self,
             cv=cv,
@@ -593,10 +627,10 @@ class _GLMBase:
             include_unregularized=include_unregularized,
             verbose=verbose,
         )
-        
+
         if verbose:
             print(f"\nRefitting on full data with alpha={path_info.selected_alpha:.6f}")
-        
+
         return path_info.selected_alpha, path_info.selected_l1_ratio, path_info
 
 
@@ -604,13 +638,14 @@ class _GLMBase:
 class _DeserializedResult:
     """
     Minimal result object for deserialized models.
-    
+
     This provides the interface needed by GLMModel for prediction
     without requiring the full Rust GLMResults object.
-    
+
     Note: fittedvalues and linear_predictor are not stored as they're
     large arrays not needed for prediction on new data.
     """
+
     params: np.ndarray
     deviance: float
     iterations: int
@@ -622,14 +657,14 @@ class _DeserializedResult:
     l1_ratio: float
     is_regularized: bool
     penalty_type: str
-    
+
     @property
     def fittedvalues(self) -> np.ndarray:
         raise AttributeError(
             "fittedvalues not available on deserialized models. "
             "Only coefficients are stored for prediction."
         )
-    
+
     @property
     def linear_predictor(self) -> np.ndarray:
         raise AttributeError(
@@ -641,19 +676,19 @@ class _DeserializedResult:
 class _DeserializedBuilder(InteractionBuilder):
     """
     Minimal builder for deserialized models.
-    
+
     Inherits all transform_new_data / prediction logic from InteractionBuilder.
     Only overrides __init__ to restore state from a serialized dict instead
     of building from a live DataFrame.
     """
-    
+
     def __init__(self, state: dict):
         # Bypass InteractionBuilder.__init__ — set state directly from dict
         self._parsed_formula = state["parsed_formula"]
         self._cat_encoding_cache = state["cat_encoding_cache"]
         self._fitted_splines = state["fitted_splines"]
         self._te_stats = state["te_stats"]
-        self._fe_stats: Dict[str, dict] = {}
+        self._fe_stats: dict[str, dict] = {}
         self.dtype = state["dtype"]
         self.data = None
         self._n = 0
@@ -662,10 +697,10 @@ class _DeserializedBuilder(InteractionBuilder):
 class GLMModel:
     """
     Results from a formula-based GLM fit.
-    
+
     This wraps the base GLMResults and adds formula-specific functionality
     like named coefficients and automatic summary formatting.
-    
+
     Attributes
     ----------
     params : np.ndarray
@@ -675,23 +710,23 @@ class GLMModel:
     formula : str
         The formula used to fit the model
     """
-    
+
     def __init__(
         self,
         result,
-        feature_names: List[str],
+        feature_names: list[str],
         formula: str,
         family: str,
-        link: Optional[str],
-        builder: Optional["InteractionBuilder"] = None,
-        offset_spec: Optional[Union[str, np.ndarray]] = None,
+        link: str | None,
+        builder: InteractionBuilder | None = None,
+        offset_spec: str | np.ndarray | None = None,
         offset_is_exposure: bool = False,
-        regularization_path_info: Optional["RegularizationPathInfo"] = None,
-        smooth_results: Optional[List[SmoothTermResult]] = None,
-        total_edf: Optional[float] = None,
-        gcv: Optional[float] = None,
-        terms_dict: Optional[Dict[str, Dict[str, Any]]] = None,
-        interactions_spec: Optional[List[Dict[str, Any]]] = None,
+        regularization_path_info: RegularizationPathInfo | None = None,
+        smooth_results: list[SmoothTermResult] | None = None,
+        total_edf: float | None = None,
+        gcv: float | None = None,
+        terms_dict: dict[str, dict[str, Any]] | None = None,
+        interactions_spec: list[dict[str, Any]] | None = None,
     ):
         self._result = result
         self._is_deserialized = isinstance(result, _DeserializedResult)
@@ -708,51 +743,51 @@ class GLMModel:
         self._offset_is_exposure = offset_is_exposure
         self._terms_dict = terms_dict
         self._interactions_spec = interactions_spec
-    
+
     def __getattr__(self, name: str) -> Any:
         """Delegate attribute access to the underlying result object.
-        
+
         This handles all properties and methods from PyGLMResults that are
         not explicitly defined on GLMModel (params, fittedvalues, deviance,
         bse, tvalues, pvalues, conf_int, resid_*, llf, aic, bic, scale,
         robust SEs, regularization properties, etc.).
         """
-        if name.startswith('_'):
+        if name.startswith("_"):
             raise AttributeError(name)
         return getattr(self._result, name)
-    
+
     @property
-    def smooth_terms(self) -> Optional[List[SmoothTermResult]]:
+    def smooth_terms(self) -> list[SmoothTermResult] | None:
         """Smooth term results with EDF, lambda, and GCV for each s() term."""
         return self._smooth_results
-    
+
     @property
-    def total_edf(self) -> Optional[float]:
+    def total_edf(self) -> float | None:
         """Total effective degrees of freedom (parametric + smooth terms)."""
         return self._total_edf
-    
+
     @property
-    def gcv(self) -> Optional[float]:
+    def gcv(self) -> float | None:
         """Generalized Cross-Validation score for smoothness selection."""
         return self._gcv
-    
+
     def has_smooth_terms(self) -> bool:
         """Check if model contains smooth terms with automatic smoothing."""
         return self._smooth_results is not None and len(self._smooth_results) > 0
-    
+
     @property
-    def terms_dict(self) -> Optional[Dict[str, Dict[str, Any]]]:
+    def terms_dict(self) -> dict[str, dict[str, Any]] | None:
         """Original terms dictionary used to specify the model (dict API only)."""
         return self._terms_dict
-    
+
     @property
-    def interactions_spec(self) -> Optional[List[Dict[str, Any]]]:
+    def interactions_spec(self) -> list[dict[str, Any]] | None:
         """Original interactions specification used to specify the model (dict API only)."""
         return self._interactions_spec
-    
-    def get_design_matrix(self) -> Optional[np.ndarray]:
+
+    def get_design_matrix(self) -> np.ndarray | None:
         """Get the design matrix X used in fitting.
-        
+
         Returns None if store_design_matrix=False was used (lean mode).
         """
         try:
@@ -762,59 +797,59 @@ class GLMModel:
             return np.asarray(dm)
         except AttributeError:
             return None
-    
-    def get_irls_weights(self) -> Optional[np.ndarray]:
+
+    def get_irls_weights(self) -> np.ndarray | None:
         """Get the IRLS working weights from final iteration."""
         try:
             return np.asarray(self._result.irls_weights)
         except AttributeError:
             return None
-    
-    def get_bread_matrix(self) -> Optional[np.ndarray]:
+
+    def get_bread_matrix(self) -> np.ndarray | None:
         """Get the (X'WX)^-1 matrix (unscaled covariance)."""
         try:
             return np.asarray(self._result.cov_params_unscaled)
         except AttributeError:
             return None
-    
-    def selected_features(self) -> List[str]:
+
+    def selected_features(self) -> list[str]:
         """
         Get names of features with non-zero coefficients.
-        
+
         Useful for Lasso/Elastic Net to see which variables were selected.
         """
         indices = self._result.selected_features()
         return [self.feature_names[i] for i in indices]
-    
+
     # CV-based regularization path properties
     @property
-    def cv_deviance(self) -> Optional[float]:
+    def cv_deviance(self) -> float | None:
         """CV deviance at selected alpha (only available when fit with cv=)."""
         if self._regularization_path_info is None:
             return None
         return self._regularization_path_info.cv_deviance
-    
+
     @property
-    def cv_deviance_se(self) -> Optional[float]:
+    def cv_deviance_se(self) -> float | None:
         """Standard error of CV deviance (only available when fit with cv=)."""
         if self._regularization_path_info is None:
             return None
         return self._regularization_path_info.cv_deviance_se
-    
+
     @property
-    def regularization_type(self) -> Optional[str]:
+    def regularization_type(self) -> str | None:
         """Type of regularization: 'ridge', 'lasso', 'elastic_net', or 'none'."""
         if self._regularization_path_info is None:
             # Fall back to penalty_type from underlying result
             return self.penalty_type
         return self._regularization_path_info.regularization_type
-    
+
     @property
-    def regularization_path(self) -> Optional[List[dict]]:
+    def regularization_path(self) -> list[dict] | None:
         """
         Full regularization path results (only available when fit with cv=).
-        
-        Returns list of dicts with keys: alpha, l1_ratio, cv_deviance_mean, 
+
+        Returns list of dicts with keys: alpha, l1_ratio, cv_deviance_mean,
         cv_deviance_se, n_nonzero, max_coef.
         """
         if self._regularization_path_info is None:
@@ -830,30 +865,30 @@ class GLMModel:
             }
             for r in self._regularization_path_info.path
         ]
-    
+
     @property
-    def cv_selection_method(self) -> Optional[str]:
+    def cv_selection_method(self) -> str | None:
         """Selection method used: 'min' or '1se' (only available when fit with cv=)."""
         if self._regularization_path_info is None:
             return None
         return self._regularization_path_info.selection_method
-    
+
     @property
-    def n_cv_folds(self) -> Optional[int]:
+    def n_cv_folds(self) -> int | None:
         """Number of CV folds used (only available when fit with cv=)."""
         if self._regularization_path_info is None:
             return None
         return self._regularization_path_info.n_folds
-    
+
     @property
     def nobs(self) -> int:
         """Number of observations."""
         return self._result.nobs
-    
+
     @property
     def df_resid(self) -> float:
         """Residual degrees of freedom.
-        
+
         For smooth models, uses n - total_edf instead of n - p,
         where total_edf accounts for the effective complexity of
         penalized smooth terms.
@@ -861,31 +896,31 @@ class GLMModel:
         if self._total_edf is not None:
             return self._result.nobs - self._total_edf
         return self._result.df_resid
-    
+
     @property
     def df_model(self) -> float:
         """Model degrees of freedom.
-        
+
         For smooth models, uses total_edf - 1 (excluding intercept)
         instead of raw p - 1.
         """
         if self._total_edf is not None:
             return self._total_edf - 1
         return self._result.df_model
-    
+
     def compute_loss(
-        self, 
-        data: "pl.DataFrame",
-        response: Optional[str] = None,
-        exposure: Optional[str] = None,
+        self,
+        data: pl.DataFrame,
+        response: str | None = None,
+        exposure: str | None = None,
     ) -> float:
         """
         Compute family-appropriate loss (mean deviance) on given data.
-        
+
         This method re-predicts on the data to ensure consistent encoding,
         which is critical for TE() terms that use leave-one-out during fit
         but full encoding for prediction.
-        
+
         Parameters
         ----------
         data : pl.DataFrame
@@ -894,12 +929,12 @@ class GLMModel:
             Response column name. Auto-detected from formula if not provided.
         exposure : str, optional
             Exposure column name for rate models.
-            
+
         Returns
         -------
         float
             Mean deviance (family-appropriate loss metric).
-            
+
         Examples
         --------
         >>> train_loss = result.compute_loss(train_data)
@@ -907,86 +942,89 @@ class GLMModel:
         >>> assert train_loss < test_loss  # Expected for non-overfitting models
         """
         from rustystats._rustystats import compute_loss_metrics_py as _rust_loss_metrics
-        
+
         # Get response column from formula
         if response is None:
-            formula_parts = self.formula.split('~')
+            formula_parts = self.formula.split("~")
             response = formula_parts[0].strip() if formula_parts else None
-        
+
         if response is None or response not in data.columns:
             raise ValidationError(f"Response column '{response}' not found in data")
-        
+
         y = data[response].to_numpy().astype(np.float64)
-        
+
         # Re-predict to get consistent encoding (critical for TE terms)
         mu = np.asarray(self.predict(data), dtype=np.float64)
-        
+
         # Compute family-appropriate loss
         loss_metrics = _rust_loss_metrics(y, mu, self.family)
         return loss_metrics["family_loss"]
-    
-    def coef_table(self) -> "pl.DataFrame":
+
+    def coef_table(self) -> pl.DataFrame:
         """
         Return coefficients as a DataFrame with names.
-        
+
         Returns
         -------
         pl.DataFrame
             DataFrame with columns: Feature, Estimate, Std.Error, z, Pr(>|z|), Signif
         """
         import polars as pl
-        
-        return pl.DataFrame({
-            "Feature": self.feature_names,
-            "Estimate": self.params,
-            "Std.Error": self.bse(),
-            "z": self.tvalues(),
-            "Pr(>|z|)": self.pvalues(),
-            "Signif": self.significance_codes(),
-        })
-    
-    def relativities(self) -> "pl.DataFrame":
+
+        return pl.DataFrame(
+            {
+                "Feature": self.feature_names,
+                "Estimate": self.params,
+                "Std.Error": self.bse(),
+                "z": self.tvalues(),
+                "Pr(>|z|)": self.pvalues(),
+                "Signif": self.significance_codes(),
+            }
+        )
+
+    def relativities(self) -> pl.DataFrame:
         """
         Return relativities (exp(coef)) for log-link models.
-        
+
         Returns
         -------
         pl.DataFrame
             DataFrame with Feature, Relativity and confidence interval columns
         """
         import polars as pl
-        
+
         if self.link not in ("log",):
-            raise ValidationError(
-                f"Relativities only meaningful for log link, not '{self.link}'"
-            )
-        
+            raise ValidationError(f"Relativities only meaningful for log link, not '{self.link}'")
+
         ci = self.conf_int()
-        
-        return pl.DataFrame({
-            "Feature": self.feature_names,
-            "Relativity": np.exp(self.params),
-            "CI_Lower": np.exp(ci[:, 0]),
-            "CI_Upper": np.exp(ci[:, 1]),
-        })
-    
+
+        return pl.DataFrame(
+            {
+                "Feature": self.feature_names,
+                "Relativity": np.exp(self.params),
+                "CI_Lower": np.exp(ci[:, 0]),
+                "CI_Upper": np.exp(ci[:, 1]),
+            }
+        )
+
     def summary(self) -> str:
         """
         Generate a formatted summary string.
-        
+
         Returns
         -------
         str
             Formatted summary table
         """
         from rustystats.glm import summary
+
         return summary(self._result, feature_names=self.feature_names)
-    
+
     def diagnostics(
         self,
-        train_data: "pl.DataFrame",
-        categorical_factors: Optional[List[str]] = None,
-        continuous_factors: Optional[List[str]] = None,
+        train_data: pl.DataFrame,
+        categorical_factors: list[str] | None = None,
+        continuous_factors: list[str] | None = None,
         n_calibration_bins: int = 10,
         n_factor_bins: int = 10,
         rare_threshold_pct: float = 1.0,
@@ -994,7 +1032,7 @@ class GLMModel:
         detect_interactions: bool = False,
         max_interaction_factors: int = 10,
         # Test data for overfitting detection (response/exposure auto-inferred)
-        test_data: Optional["pl.DataFrame"] = None,
+        test_data: pl.DataFrame | None = None,
         # Control enhanced diagnostics
         compute_vif: bool = True,
         compute_coefficients: bool = True,
@@ -1002,11 +1040,11 @@ class GLMModel:
         compute_lift: bool = True,
         compute_partial_dep: bool = True,
         # Base predictions comparison
-        base_predictions: Optional[str] = None,
-    ) -> "ModelDiagnostics":
+        base_predictions: str | None = None,
+    ) -> ModelDiagnostics:
         """
         Compute comprehensive model diagnostics.
-        
+
         Parameters
         ----------
         train_data : pl.DataFrame
@@ -1046,12 +1084,12 @@ class GLMModel:
             - A/E ratio, loss, Gini for base predictions
             - Model vs base decile analysis sorted by model/base ratio
             - Summary of which model performs better in each decile
-        
+
         Returns
         -------
         ModelDiagnostics
             Complete diagnostics object with to_json() method.
-            
+
             Fields for agentic workflows:
             - vif: VIF scores detecting multicollinearity (train-only)
             - coefficient_summary: Coefficient magnitudes and recommendations (train-only)
@@ -1062,18 +1100,18 @@ class GLMModel:
                 - overfitting_risk: True if gini_gap > 0.03
                 - calibration_drift: True if test A/E outside [0.95, 1.05]
                 - unstable_factors: Factors where train/test A/E differ by > 0.1
-        
+
         Examples
         --------
         >>> result = rs.glm_dict(response="ClaimNb", terms={"Age": {"type": "linear"}, "Region": {"type": "categorical"}}, data=data, family="poisson", offset="Exposure").fit()
-        >>> 
+        >>>
         >>> # Basic diagnostics
         >>> diagnostics = result.diagnostics(
         ...     train_data=train_data,
         ...     categorical_factors=["Region", "VehBrand"],
         ...     continuous_factors=["Age", "VehPower"]
         ... )
-        >>> 
+        >>>
         >>> # With test data for overfitting detection
         >>> diagnostics = result.diagnostics(
         ...     train_data=train_data,
@@ -1081,21 +1119,21 @@ class GLMModel:
         ...     categorical_factors=["Region"],
         ...     continuous_factors=["Age"],
         ... )
-        >>> 
+        >>>
         >>> # Check overfitting flags
         >>> if diagnostics.train_test and diagnostics.train_test.overfitting_risk:
         ...     print("Warning: Overfitting detected!")
-        >>> 
+        >>>
         >>> print(diagnostics.to_json())
         """
         from rustystats.diagnostics import compute_diagnostics
-        
+
         # Deserialized models lack covariance / design matrix — disable
         # features that depend on them to avoid AttributeErrors.
         if self._is_deserialized:
             compute_vif = False
             compute_coefficients = False
-        
+
         return compute_diagnostics(
             result=self,
             train_data=train_data,
@@ -1115,27 +1153,27 @@ class GLMModel:
             compute_partial_dep=compute_partial_dep,
             base_predictions=base_predictions,
         )
-    
+
     def diagnostics_json(
         self,
-        train_data: "pl.DataFrame",
-        categorical_factors: Optional[List[str]] = None,
-        continuous_factors: Optional[List[str]] = None,
+        train_data: pl.DataFrame,
+        categorical_factors: list[str] | None = None,
+        continuous_factors: list[str] | None = None,
         n_calibration_bins: int = 10,
         n_factor_bins: int = 10,
         rare_threshold_pct: float = 1.0,
         max_categorical_levels: int = 20,
         detect_interactions: bool = False,
         max_interaction_factors: int = 10,
-        test_data: Optional["pl.DataFrame"] = None,
-        indent: Optional[int] = None,
+        test_data: pl.DataFrame | None = None,
+        indent: int | None = None,
     ) -> str:
         """
         Compute diagnostics and return as JSON string.
-        
+
         This is a convenience method that calls diagnostics() and converts
         the result to JSON. The output is optimized for LLM consumption.
-        
+
         Parameters
         ----------
         train_data : pl.DataFrame
@@ -1148,7 +1186,7 @@ class GLMModel:
             Test data for overfitting detection.
         indent : int, optional
             JSON indentation. None for compact output.
-        
+
         Returns
         -------
         str
@@ -1167,15 +1205,15 @@ class GLMModel:
             test_data=test_data,
         )
         return diag.to_json(indent=indent)
-    
+
     def predict(
         self,
-        new_data: "pl.DataFrame",
-        offset: Optional[Union[str, np.ndarray]] = None,
+        new_data: pl.DataFrame,
+        offset: str | np.ndarray | None = None,
     ) -> np.ndarray:
         """
         Predict on new data using the fitted model.
-        
+
         Parameters
         ----------
         new_data : pl.DataFrame
@@ -1184,20 +1222,20 @@ class GLMModel:
             Offset for new data. If None and the model was fit with an offset
             column name, that column will be extracted from new_data.
             For Poisson/Gamma with log link, log() is auto-applied to exposure.
-            
+
         Returns
         -------
         np.ndarray
             Predicted values (on the response scale, i.e., μ = E[Y]).
-            
+
         Examples
         --------
         >>> model = rs.glm_dict(response="ClaimNb", terms={"Age": {"type": "linear"}, "Region": {"type": "categorical"}}, data=data, family="poisson", offset="Exposure")
         >>> result = model.fit()
-        >>> 
+        >>>
         >>> # Predict on new data
         >>> predictions = result.predict(new_data)
-        >>> 
+        >>>
         >>> # Predict with custom offset
         >>> predictions = result.predict(new_data, offset=np.log(new_exposures))
         """
@@ -1206,22 +1244,26 @@ class GLMModel:
                 "Cannot predict: model was not fitted with formula API. "
                 "Use fittedvalues for training data predictions."
             )
-        
+
         # Build design matrix for new data using stored encoding state
         X_new = self._builder.transform_new_data(new_data)
-        
+
         # Compute linear predictor: η = X @ β
         linear_pred = X_new @ self.params
-        
+
         # Handle offset
         # If offset is provided as a string, extract column and apply log() for log-link models
         # If offset is provided as array, use directly (user handles transformation)
         # If offset is None but model was fit with offset, use the stored offset column
         offset_to_use = offset
-        if offset_to_use is None and hasattr(self, '_offset_spec') and self._offset_spec is not None:
+        if (
+            offset_to_use is None
+            and hasattr(self, "_offset_spec")
+            and self._offset_spec is not None
+        ):
             # Auto-use the offset column from fitting
             offset_to_use = self._offset_spec
-        
+
         if offset_to_use is not None:
             if isinstance(offset_to_use, str):
                 offset_values = new_data[offset_to_use].to_numpy().astype(np.float64)
@@ -1231,17 +1273,17 @@ class GLMModel:
             else:
                 offset_values = np.asarray(offset_to_use, dtype=np.float64)
             linear_pred = linear_pred + offset_values
-        
+
         # Apply inverse link function to get predictions on response scale
         return self._apply_inverse_link(linear_pred)
-    
+
     def _apply_inverse_link(self, eta: np.ndarray) -> np.ndarray:
         """Apply inverse link function to linear predictor."""
         return apply_inverse_link(eta, self.link)
-    
+
     def to_pmml(
         self,
-        path: Optional[str] = None,
+        path: str | None = None,
         n_grid_points: int = 200,
     ) -> str:
         """
@@ -1265,11 +1307,12 @@ class GLMModel:
             The PMML XML document as a string.
         """
         from rustystats.export_pmml import to_pmml
+
         return to_pmml(self, path=path, n_grid_points=n_grid_points)
 
     def to_onnx(
         self,
-        path: Optional[str] = None,
+        path: str | None = None,
         n_grid_points: int = 200,
         mode: str = "scoring",
     ) -> bytes:
@@ -1300,40 +1343,41 @@ class GLMModel:
             ``onnxruntime.InferenceSession(onnx_bytes)`` or write to disk.
         """
         from rustystats.export_onnx import to_onnx
+
         return to_onnx(self, path=path, n_grid_points=n_grid_points, mode=mode)
 
     def to_bytes(self) -> bytes:
         """
         Serialize the fitted model to bytes for storage or transfer.
-        
+
         The serialized model can be loaded with `GLMModel.from_bytes()`.
         All state needed for prediction is preserved, including:
         - Coefficients and feature names
         - Categorical encoding levels
         - Spline knot positions
         - Target encoding statistics
-        
+
         Returns
         -------
         bytes
             Serialized model as bytes.
-            
+
         Examples
         --------
         >>> result = rs.glm_dict(response="y", terms={"x1": {"type": "linear"}, "cat": {"type": "categorical"}}, data=data, family="poisson").fit()
         >>> model_bytes = result.to_bytes()
-        >>> 
+        >>>
         >>> # Save to file
         >>> with open("model.bin", "wb") as f:
         ...     f.write(model_bytes)
-        >>> 
+        >>>
         >>> # Load later
         >>> with open("model.bin", "rb") as f:
         ...     loaded = rs.GLMModel.from_bytes(f.read())
         >>> predictions = loaded.predict(new_data)
         """
         import pickle
-        
+
         # Extract state from the Rust result object
         # NOTE: We intentionally exclude fittedvalues and linear_predictor
         # as they are large arrays not needed for prediction (can be ~5MB each)
@@ -1350,7 +1394,7 @@ class GLMModel:
             "is_regularized": self._result.is_regularized,
             "penalty_type": self._result.penalty_type,
         }
-        
+
         # Extract builder state for prediction
         builder_state = None
         if self._builder is not None:
@@ -1361,7 +1405,7 @@ class GLMModel:
                 "te_stats": getattr(self._builder, "_te_stats", {}),
                 "dtype": self._builder.dtype,
             }
-        
+
         state = {
             "version": 1,
             "result_state": result_state,
@@ -1378,45 +1422,45 @@ class GLMModel:
             "terms_dict": self._terms_dict,
             "interactions_spec": self._interactions_spec,
         }
-        
+
         return pickle.dumps(state, protocol=pickle.HIGHEST_PROTOCOL)
-    
+
     @classmethod
-    def from_bytes(cls, data: bytes) -> "GLMModel":
+    def from_bytes(cls, data: bytes) -> GLMModel:
         """
         Load a fitted model from bytes.
-        
+
         Parameters
         ----------
         data : bytes
             Serialized model bytes from `to_bytes()`.
-            
+
         Returns
         -------
         GLMModel
             Reconstructed fitted model ready for prediction.
-            
+
         Examples
         --------
         >>> # Load from file
         >>> with open("model.bin", "rb") as f:
         ...     result = rs.GLMModel.from_bytes(f.read())
-        >>> 
+        >>>
         >>> # Make predictions
         >>> predictions = result.predict(new_data)
         """
         import pickle
-        
+
         state = pickle.loads(data)
-        
+
         if state.get("version", 0) != 1:
             raise SerializationError(
                 f"Unsupported serialization version: {state.get('version')}. "
                 "Model was saved with a different version of rustystats."
             )
-        
+
         result_state = state["result_state"]
-        
+
         # Create a minimal result object that supports prediction
         result = _DeserializedResult(
             params=result_state["params"],
@@ -1431,12 +1475,12 @@ class GLMModel:
             is_regularized=result_state["is_regularized"],
             penalty_type=result_state["penalty_type"],
         )
-        
+
         # Reconstruct builder if it was saved
         builder = None
         if state["builder_state"] is not None:
             builder = _DeserializedBuilder(state["builder_state"])
-        
+
         return cls(
             result=result,
             feature_names=state["feature_names"],
@@ -1453,7 +1497,7 @@ class GLMModel:
             terms_dict=state.get("terms_dict"),
             interactions_spec=state.get("interactions_spec"),
         )
-    
+
     def __repr__(self) -> str:
         return (
             f"<GLMModel: {self.family} family, "
@@ -1466,31 +1510,34 @@ class GLMModel:
 # Dict-based API
 # =============================================================================
 
+from rustystats.constants import (
+    DEFAULT_N_PERMUTATIONS,
+    DEFAULT_PRIOR_WEIGHT,
+    DEFAULT_SPLINE_DEGREE,
+)
 from rustystats.interactions import (
-    ParsedFormula, InteractionTerm, TargetEncodingTermSpec, 
-    IdentityTermSpec, CategoricalTermSpec, ConstraintTermSpec,
+    CategoricalTermSpec,
+    ConstraintTermSpec,
     FrequencyEncodingTermSpec,
+    IdentityTermSpec,
+    InteractionTerm,
+    ParsedFormula,
+    TargetEncodingTermSpec,
 )
 from rustystats.splines import SplineTerm
-from rustystats.constants import (
-    DEFAULT_SPLINE_DF,
-    DEFAULT_SPLINE_DEGREE,
-    DEFAULT_PRIOR_WEIGHT,
-    DEFAULT_N_PERMUTATIONS,
-)
 
 
 def _parse_term_spec(
     var_name: str,
-    spec: Dict[str, Any],
-    categorical_vars: Set[str],
-    main_effects: List[str],
-    spline_terms: List[SplineTerm],
-    target_encoding_terms: List[TargetEncodingTermSpec],
-    identity_terms: List[IdentityTermSpec],
-    categorical_terms: List[CategoricalTermSpec],
-    constraint_terms: List[ConstraintTermSpec],
-    frequency_encoding_terms: Optional[List] = None,
+    spec: dict[str, Any],
+    categorical_vars: set[str],
+    main_effects: list[str],
+    spline_terms: list[SplineTerm],
+    target_encoding_terms: list[TargetEncodingTermSpec],
+    identity_terms: list[IdentityTermSpec],
+    categorical_terms: list[CategoricalTermSpec],
+    constraint_terms: list[ConstraintTermSpec],
+    frequency_encoding_terms: list | None = None,
 ) -> None:
     """Parse a single term specification and add to appropriate lists."""
     # Valid keys for each term type
@@ -1503,9 +1550,9 @@ def _parse_term_spec(
         "frequency_encoding": {"type", "variable"},
         "expression": {"type", "expr", "monotonicity"},
     }
-    
+
     term_type = spec.get("type", "linear")
-    
+
     # Validate keys
     valid_keys = VALID_KEYS.get(term_type, set())
     unknown_keys = set(spec.keys()) - valid_keys
@@ -1527,32 +1574,36 @@ def _parse_term_spec(
             f"Unknown key(s) in term spec for '{var_name}': {', '.join(suggestions)}. "
             f"Valid keys for type='{term_type}' are: {sorted(valid_keys)}"
         )
-    
+
     monotonicity = spec.get("monotonicity")  # "increasing" or "decreasing"
-    
+
     if term_type == "linear":
         if monotonicity:
             # Constrained linear term
             constraint = "pos" if monotonicity == "increasing" else "neg"
-            constraint_terms.append(ConstraintTermSpec(
-                var_name=var_name,
-                constraint=constraint,
-            ))
+            constraint_terms.append(
+                ConstraintTermSpec(
+                    var_name=var_name,
+                    constraint=constraint,
+                )
+            )
         else:
             main_effects.append(var_name)
-    
+
     elif term_type == "categorical":
         categorical_vars.add(var_name)
         levels = spec.get("levels")
         if levels:
             # Specific levels only
-            categorical_terms.append(CategoricalTermSpec(
-                var_name=var_name,
-                levels=levels,
-            ))
+            categorical_terms.append(
+                CategoricalTermSpec(
+                    var_name=var_name,
+                    levels=levels,
+                )
+            )
         else:
             main_effects.append(var_name)
-    
+
     elif term_type == "bs":
         # Default to penalized smooth (k=DEFAULT_SPLINE_DF) if neither df nor k specified
         k = spec.get("k")
@@ -1578,7 +1629,7 @@ def _parse_term_spec(
         if monotonicity:
             term._monotonic = True
         spline_terms.append(term)
-    
+
     elif term_type == "ns":
         # Default to penalized smooth (k=DEFAULT_SPLINE_DF) if neither df nor k specified
         k = spec.get("k")
@@ -1593,8 +1644,8 @@ def _parse_term_spec(
             is_penalized = False
         if monotonicity:
             raise ValidationError(
-                f"Monotonicity constraints are not supported for natural splines (ns). "
-                f"Use type='bs' with monotonicity parameter instead for monotonic effects."
+                "Monotonicity constraints are not supported for natural splines (ns). "
+                "Use type='bs' with monotonicity parameter instead for monotonic effects."
             )
         term = SplineTerm(
             var_name=var_name,
@@ -1604,7 +1655,7 @@ def _parse_term_spec(
         if is_penalized:
             term._is_smooth = True
         spline_terms.append(term)
-    
+
     elif term_type == "target_encoding":
         prior_weight = spec.get("prior_weight", DEFAULT_PRIOR_WEIGHT)
         n_permutations = spec.get("n_permutations", DEFAULT_N_PERMUTATIONS)
@@ -1613,14 +1664,17 @@ def _parse_term_spec(
         actual_var = spec.get("variable", var_name)
         existing_te_vars = {te.var_name for te in target_encoding_terms}
         if actual_var not in existing_te_vars:
-            target_encoding_terms.append(TargetEncodingTermSpec(
-                var_name=actual_var,
-                prior_weight=prior_weight,
-                n_permutations=n_permutations,
-            ))
-    
+            target_encoding_terms.append(
+                TargetEncodingTermSpec(
+                    var_name=actual_var,
+                    prior_weight=prior_weight,
+                    n_permutations=n_permutations,
+                )
+            )
+
     elif term_type == "frequency_encoding":
         from rustystats.interactions import FrequencyEncodingTermSpec as FETermSpec
+
         if frequency_encoding_terms is None:
             raise ValidationError(
                 f"frequency_encoding type not supported in this context. "
@@ -1629,36 +1683,38 @@ def _parse_term_spec(
         # Use 'variable' key if provided, otherwise use the dict key
         actual_var = spec.get("variable", var_name)
         frequency_encoding_terms.append(FETermSpec(var_name=actual_var))
-    
+
     elif term_type == "expression":
         expr = spec.get("expr", var_name)
         if monotonicity:
             constraint = "pos" if monotonicity == "increasing" else "neg"
-            constraint_terms.append(ConstraintTermSpec(
-                var_name=f"I({expr})",
-                constraint=constraint,
-            ))
+            constraint_terms.append(
+                ConstraintTermSpec(
+                    var_name=f"I({expr})",
+                    constraint=constraint,
+                )
+            )
         else:
             identity_terms.append(IdentityTermSpec(expression=expr))
-    
+
     else:
         raise ValidationError(f"Unknown term type: {term_type}")
 
 
 def _parse_interaction_spec(
-    interaction: Dict[str, Any],
-    interactions: List[InteractionTerm],
-    categorical_vars: Set[str],
-    main_effects: List[str],
-    spline_terms: List[SplineTerm],
-    target_encoding_terms: List[TargetEncodingTermSpec],
-    identity_terms: List[IdentityTermSpec],
-    categorical_terms: List[CategoricalTermSpec],
-    constraint_terms: List[ConstraintTermSpec],
-    frequency_encoding_terms: Optional[List] = None,
+    interaction: dict[str, Any],
+    interactions: list[InteractionTerm],
+    categorical_vars: set[str],
+    main_effects: list[str],
+    spline_terms: list[SplineTerm],
+    target_encoding_terms: list[TargetEncodingTermSpec],
+    identity_terms: list[IdentityTermSpec],
+    categorical_terms: list[CategoricalTermSpec],
+    constraint_terms: list[ConstraintTermSpec],
+    frequency_encoding_terms: list | None = None,
 ) -> None:
     """Parse an interaction specification.
-    
+
     Supports two modes:
     1. Standard interaction: creates product terms (cat×cat, cat×cont, etc.)
     2. Encoding interaction: combines variables into single encoded value
@@ -1666,74 +1722,88 @@ def _parse_interaction_spec(
        - frequency_encoding: True → FE(var1:var2:...)
     """
     # Reserved keys (not variable specs)
-    RESERVED_KEYS = {"include_main", "target_encoding", "frequency_encoding", 
-                     "prior_weight", "n_permutations"}
-    
+    RESERVED_KEYS = {
+        "include_main",
+        "target_encoding",
+        "frequency_encoding",
+        "prior_weight",
+        "n_permutations",
+    }
+
     include_main = interaction.get("include_main", False)
     is_te_interaction = interaction.get("target_encoding", False)
     is_fe_interaction = interaction.get("frequency_encoding", False)
-    
+
     if is_te_interaction and is_fe_interaction:
         raise ValidationError(
             "Cannot specify both target_encoding and frequency_encoding for same interaction"
         )
-    
+
     # Extract variable specs (everything except reserved keys)
     var_specs = {k: v for k, v in interaction.items() if k not in RESERVED_KEYS}
-    
+
     if len(var_specs) < 2:
         raise ValidationError("Interaction must have at least 2 variables")
-    
+
     # Helper: track categorical vars and optionally add main effects
     def _process_encoding_interaction() -> None:
         for var_name, spec in var_specs.items():
             if spec.get("type", "categorical") == "categorical":
                 categorical_vars.add(var_name)
-        
+
         if include_main:
             for var_name, spec in var_specs.items():
                 _parse_term_spec(
-                    var_name, spec, categorical_vars, main_effects,
-                    spline_terms, target_encoding_terms, identity_terms,
-                    categorical_terms, constraint_terms, frequency_encoding_terms,
+                    var_name,
+                    spec,
+                    categorical_vars,
+                    main_effects,
+                    spline_terms,
+                    target_encoding_terms,
+                    identity_terms,
+                    categorical_terms,
+                    constraint_terms,
+                    frequency_encoding_terms,
                 )
-    
+
     # Handle TE interaction: TE(var1:var2:...)
     if is_te_interaction:
         interaction_vars = list(var_specs.keys())
-        target_encoding_terms.append(TargetEncodingTermSpec(
-            var_name=":".join(interaction_vars),
-            prior_weight=interaction.get("prior_weight", DEFAULT_PRIOR_WEIGHT),
-            n_permutations=interaction.get("n_permutations", DEFAULT_N_PERMUTATIONS),
-            interaction_vars=interaction_vars,
-        ))
+        target_encoding_terms.append(
+            TargetEncodingTermSpec(
+                var_name=":".join(interaction_vars),
+                prior_weight=interaction.get("prior_weight", DEFAULT_PRIOR_WEIGHT),
+                n_permutations=interaction.get("n_permutations", DEFAULT_N_PERMUTATIONS),
+                interaction_vars=interaction_vars,
+            )
+        )
         _process_encoding_interaction()
         return
-    
+
     # Handle FE interaction: FE(var1:var2:...)
     if is_fe_interaction:
         if frequency_encoding_terms is None:
-            raise ValidationError(
-                "frequency_encoding interaction not supported in this context"
-            )
+            raise ValidationError("frequency_encoding interaction not supported in this context")
         interaction_vars = list(var_specs.keys())
-        frequency_encoding_terms.append(FrequencyEncodingTermSpec(
-            var_name=":".join(interaction_vars),
-            interaction_vars=interaction_vars,
-        ))
+        frequency_encoding_terms.append(
+            FrequencyEncodingTermSpec(
+                var_name=":".join(interaction_vars),
+                interaction_vars=interaction_vars,
+            )
+        )
         _process_encoding_interaction()
         return
-    
+
     # Standard interaction: product terms
     # Determine which factors are categorical, splines, or TE
     cat_factors = set()
     linear_factors = set()  # Factors explicitly typed as linear (no spline expansion)
     spline_factors = []
     te_factor_names = {}  # Maps original name -> TE(name) format
-    
+
     for var_name, spec in var_specs.items():
         term_type = spec.get("type", "linear")
-        
+
         if term_type == "linear":
             linear_factors.add(var_name)
         elif term_type == "categorical":
@@ -1768,43 +1838,51 @@ def _parse_interaction_spec(
             # TE in interaction - add to TE terms so encoding is available (if not already present)
             existing_te_vars = {te.var_name for te in target_encoding_terms}
             if var_name not in existing_te_vars:
-                target_encoding_terms.append(TargetEncodingTermSpec(
-                    var_name=var_name,
-                    prior_weight=prior_weight,
-                ))
-    
+                target_encoding_terms.append(
+                    TargetEncodingTermSpec(
+                        var_name=var_name,
+                        prior_weight=prior_weight,
+                    )
+                )
+
     # Build factors list, renaming TE factors to TE(name) format
-    factors = [te_factor_names.get(k, k) for k in var_specs.keys()]
-    
+    factors = [te_factor_names.get(k, k) for k in var_specs]
+
     # Build interaction term - categorical_flags is a bool for each factor
     categorical_flags = [f in cat_factors for f in factors]
-    
+
     interaction_term = InteractionTerm(
         factors=factors,
         categorical_flags=categorical_flags,
         force_linear=linear_factors if linear_factors else None,
     )
     interactions.append(interaction_term)
-    
+
     # Add main effects if requested
     if include_main:
         for var_name, spec in var_specs.items():
             _parse_term_spec(
-                var_name, spec, categorical_vars, main_effects,
-                spline_terms, target_encoding_terms, identity_terms,
-                categorical_terms, constraint_terms,
+                var_name,
+                spec,
+                categorical_vars,
+                main_effects,
+                spline_terms,
+                target_encoding_terms,
+                identity_terms,
+                categorical_terms,
+                constraint_terms,
             )
 
 
 def dict_to_parsed_formula(
     response: str,
-    terms: Dict[str, Dict[str, Any]],
-    interactions: Optional[List[Dict[str, Any]]] = None,
+    terms: dict[str, dict[str, Any]],
+    interactions: list[dict[str, Any]] | None = None,
     intercept: bool = True,
 ) -> ParsedFormula:
     """
     Convert dict specification to ParsedFormula.
-    
+
     Parameters
     ----------
     response : str
@@ -1815,42 +1893,54 @@ def dict_to_parsed_formula(
         List of interaction specifications
     intercept : bool, default=True
         Whether to include an intercept
-        
+
     Returns
     -------
     ParsedFormula
         Parsed formula object compatible with build_design_matrix
     """
-    from rustystats.interactions import FrequencyEncodingTermSpec
-    
-    categorical_vars: Set[str] = set()
-    main_effects: List[str] = []
-    spline_terms_list: List[SplineTerm] = []
-    target_encoding_terms_list: List[TargetEncodingTermSpec] = []
-    frequency_encoding_terms_list: List[FrequencyEncodingTermSpec] = []
-    identity_terms_list: List[IdentityTermSpec] = []
-    categorical_terms_list: List[CategoricalTermSpec] = []
-    constraint_terms_list: List[ConstraintTermSpec] = []
-    interaction_terms_list: List[InteractionTerm] = []
-    
+
+    categorical_vars: set[str] = set()
+    main_effects: list[str] = []
+    spline_terms_list: list[SplineTerm] = []
+    target_encoding_terms_list: list[TargetEncodingTermSpec] = []
+    frequency_encoding_terms_list: list[FrequencyEncodingTermSpec] = []
+    identity_terms_list: list[IdentityTermSpec] = []
+    categorical_terms_list: list[CategoricalTermSpec] = []
+    constraint_terms_list: list[ConstraintTermSpec] = []
+    interaction_terms_list: list[InteractionTerm] = []
+
     # Parse main terms
     for var_name, spec in terms.items():
         _parse_term_spec(
-            var_name, spec, categorical_vars, main_effects,
-            spline_terms_list, target_encoding_terms_list, identity_terms_list,
-            categorical_terms_list, constraint_terms_list, frequency_encoding_terms_list,
+            var_name,
+            spec,
+            categorical_vars,
+            main_effects,
+            spline_terms_list,
+            target_encoding_terms_list,
+            identity_terms_list,
+            categorical_terms_list,
+            constraint_terms_list,
+            frequency_encoding_terms_list,
         )
-    
+
     # Parse interactions
     if interactions:
         for interaction in interactions:
             _parse_interaction_spec(
-                interaction, interaction_terms_list, categorical_vars,
-                main_effects, spline_terms_list, target_encoding_terms_list,
-                identity_terms_list, categorical_terms_list, constraint_terms_list,
+                interaction,
+                interaction_terms_list,
+                categorical_vars,
+                main_effects,
+                spline_terms_list,
+                target_encoding_terms_list,
+                identity_terms_list,
+                categorical_terms_list,
+                constraint_terms_list,
                 frequency_encoding_terms_list,
             )
-    
+
     return ParsedFormula(
         response=response,
         main_effects=main_effects,
@@ -1869,24 +1959,24 @@ def dict_to_parsed_formula(
 class FormulaGLMDict(_GLMBase):
     """
     GLM model with dict-based specification.
-    
+
     Alternative to formula strings for programmatic model building.
     """
-    
+
     def __init__(
         self,
         response: str,
-        terms: Dict[str, Dict[str, Any]],
-        data: "pl.DataFrame",
-        interactions: Optional[List[Dict[str, Any]]] = None,
+        terms: dict[str, dict[str, Any]],
+        data: pl.DataFrame,
+        interactions: list[dict[str, Any]] | None = None,
         intercept: bool = True,
         family: str = "gaussian",
-        link: Optional[str] = None,
+        link: str | None = None,
         var_power: float = 1.5,
-        theta: Optional[float] = None,
-        offset: Optional[Union[str, np.ndarray]] = None,
-        weights: Optional[Union[str, np.ndarray]] = None,
-        seed: Optional[int] = None,
+        theta: float | None = None,
+        offset: str | np.ndarray | None = None,
+        weights: str | np.ndarray | None = None,
+        seed: int | None = None,
     ):
         self.response = response
         self.terms = terms
@@ -1901,10 +1991,10 @@ class FormulaGLMDict(_GLMBase):
         self._offset_spec = offset
         self._weights_spec = weights
         self._seed = seed
-        
+
         # Build formula string for compatibility (used in results/diagnostics)
         self.formula = self._build_formula_string()
-        
+
         # Convert dict to ParsedFormula
         parsed = dict_to_parsed_formula(
             response=response,
@@ -1912,10 +2002,10 @@ class FormulaGLMDict(_GLMBase):
             interactions=interactions,
             intercept=intercept,
         )
-        
+
         # Extract raw exposure for target encoding
         raw_exposure = self._get_raw_exposure(offset)
-        
+
         # Build design matrix using existing pipeline
         self._builder = InteractionBuilder(data)
         self.y, self.X, self.feature_names = self._builder.build_design_matrix_from_parsed(
@@ -1923,16 +2013,16 @@ class FormulaGLMDict(_GLMBase):
         )
         self.n_obs = len(self.y)
         self.n_params = self.X.shape[1]
-        
+
         # Process offset and weights
         self.offset = self._process_offset(offset)
         self.weights = self._process_weights(weights)
-    
+
     def _build_formula_string(self) -> str:
         """Build a formula string representation for display purposes."""
         parts = [self.response, "~"]
         term_strs = []
-        
+
         for var_name, spec in self.terms.items():
             term_type = spec.get("type", "linear")
             if term_type == "linear":
@@ -1956,26 +2046,26 @@ class FormulaGLMDict(_GLMBase):
             elif term_type == "expression":
                 expr = spec.get("expr", var_name)
                 term_strs.append(f"I({expr})")
-        
+
         if not self.intercept:
             term_strs.insert(0, "0")
-        
+
         parts.append(" + ".join(term_strs) if term_strs else "1")
         return " ".join(parts)
-    
+
     def explore(
         self,
-        categorical_factors: Optional[List[str]] = None,
-        continuous_factors: Optional[List[str]] = None,
+        categorical_factors: list[str] | None = None,
+        continuous_factors: list[str] | None = None,
         n_bins: int = 10,
         rare_threshold_pct: float = 1.0,
         max_categorical_levels: int = 20,
         detect_interactions: bool = True,
         max_interaction_factors: int = 10,
-    ) -> "DataExploration":
+    ) -> DataExploration:
         """
         Explore data before fitting the model.
-        
+
         Parameters
         ----------
         categorical_factors : list of str, optional
@@ -1992,18 +2082,18 @@ class FormulaGLMDict(_GLMBase):
             Whether to detect potential interactions.
         max_interaction_factors : int, default=10
             Maximum factors for interaction detection.
-        
+
         Returns
         -------
         DataExploration
             Pre-fit exploration results with to_json() method.
         """
         from rustystats.diagnostics import explore_data
-        
+
         exposure_col = None
         if isinstance(self._offset_spec, str):
             exposure_col = self._offset_spec
-        
+
         return explore_data(
             data=self.data,
             response=self.response,
@@ -2017,7 +2107,7 @@ class FormulaGLMDict(_GLMBase):
             detect_interactions=detect_interactions,
             max_interaction_factors=max_interaction_factors,
         )
-    
+
     def fit(
         self,
         alpha: float = 0.0,
@@ -2025,12 +2115,12 @@ class FormulaGLMDict(_GLMBase):
         max_iter: int = DEFAULT_MAX_ITER,
         tol: float = DEFAULT_TOLERANCE,
         # Cross-validation based regularization path parameters
-        cv: Optional[int] = None,
+        cv: int | None = None,
         selection: str = "min",
-        regularization: Optional[str] = None,
+        regularization: str | None = None,
         n_alphas: int = DEFAULT_N_ALPHAS,
         alpha_min_ratio: float = DEFAULT_ALPHA_MIN_RATIO,
-        cv_seed: Optional[int] = None,
+        cv_seed: int | None = None,
         include_unregularized: bool = True,
         verbose: bool = False,
         # Memory optimization
@@ -2038,80 +2128,115 @@ class FormulaGLMDict(_GLMBase):
     ) -> GLMModel:
         """
         Fit the GLM model, optionally with regularization.
-        
+
         Parameters
         ----------
         alpha : float, default=0.0
             Regularization strength. Higher values = more shrinkage.
             Ignored if regularization is specified (uses CV to find optimal).
-            
+
         l1_ratio : float, default=0.0
             Elastic Net mixing parameter (0=Ridge, 1=Lasso).
             Ignored if regularization is specified with type.
-            
+
         max_iter : int, default=25
             Maximum IRLS iterations.
         tol : float, default=1e-8
             Convergence tolerance.
-            
+
         cv : int, optional
             Number of cross-validation folds. Defaults to 5 if regularization is set.
-            
+
         selection : str, default="min"
             CV selection method: "min" or "1se".
-            
+
         regularization : str, optional
             Type: "ridge", "lasso", or "elastic_net". Triggers CV-based alpha selection.
-            
+
         n_alphas : int, default=20
             Number of alpha values in CV path.
-            
+
         alpha_min_ratio : float, default=0.0001
             Smallest alpha as ratio of alpha_max.
-            
+
         cv_seed : int, optional
             Random seed for CV folds.
-            
+
         include_unregularized : bool, default=True
             Include alpha=0 in CV comparison.
-            
+
         verbose : bool, default=False
             Print progress.
-            
+
         Returns
         -------
         GLMModel
             Fitted model results.
         """
         is_negbinomial = is_negbinomial_family(self.family)
-        
+
         # Handle CV-based regularization path (shared logic in _GLMBase)
         alpha, l1_ratio, path_info = self._resolve_cv_path(
-            alpha, l1_ratio, max_iter, tol, cv, selection, regularization,
-            n_alphas, alpha_min_ratio, cv_seed, include_unregularized, verbose,
+            alpha,
+            l1_ratio,
+            max_iter,
+            tol,
+            cv,
+            selection,
+            regularization,
+            n_alphas,
+            alpha_min_ratio,
+            cv_seed,
+            include_unregularized,
+            verbose,
         )
-        
+
         theta = self.theta if self.theta is not None else DEFAULT_NEGBINOMIAL_THETA
-        
+
         # Use shared core fitting logic
         result, smooth_results, total_edf, gcv = _fit_glm_core(
-            self.y, self.X, self.family, self.link, self.var_power, theta,
-            self.offset, self.weights, alpha, l1_ratio, max_iter, tol,
-            self.feature_names, self._builder,
+            self.y,
+            self.X,
+            self.family,
+            self.link,
+            self.var_power,
+            theta,
+            self.offset,
+            self.weights,
+            alpha,
+            l1_ratio,
+            max_iter,
+            tol,
+            self.feature_names,
+            self._builder,
             store_design_matrix=store_design_matrix,
         )
         self._smooth_results = smooth_results
         self._total_edf = total_edf
         self._gcv = gcv
-        
+
         result_family = f"NegativeBinomial(theta={theta:.4f})" if is_negbinomial else self.family
-        
+
         # Wrap result with formula metadata
-        is_exposure_offset = self.family in ("poisson", "quasipoisson", "negbinomial", "gamma") and self.link in (None, "log")
+        is_exposure_offset = self.family in (
+            "poisson",
+            "quasipoisson",
+            "negbinomial",
+            "gamma",
+        ) and self.link in (None, "log")
         return _build_results(
-            result, self.feature_names, self.formula, result_family, self.link,
-            self._builder, self._offset_spec, is_exposure_offset, path_info,
-            self._smooth_results, self._total_edf, self._gcv,
+            result,
+            self.feature_names,
+            self.formula,
+            result_family,
+            self.link,
+            self._builder,
+            self._offset_spec,
+            is_exposure_offset,
+            path_info,
+            self._smooth_results,
+            self._total_edf,
+            self._gcv,
             terms_dict=self.terms,
             interactions_spec=self.interactions_spec,
         )
@@ -2119,23 +2244,23 @@ class FormulaGLMDict(_GLMBase):
 
 def glm_dict(
     response: str,
-    terms: Dict[str, Dict[str, Any]],
-    data: "pl.DataFrame",
-    interactions: Optional[List[Dict[str, Any]]] = None,
+    terms: dict[str, dict[str, Any]],
+    data: pl.DataFrame,
+    interactions: list[dict[str, Any]] | None = None,
     intercept: bool = True,
     family: str = "gaussian",
-    link: Optional[str] = None,
+    link: str | None = None,
     var_power: float = 1.5,
-    theta: Optional[float] = None,
-    offset: Optional[Union[str, np.ndarray]] = None,
-    weights: Optional[Union[str, np.ndarray]] = None,
-    seed: Optional[int] = None,
+    theta: float | None = None,
+    offset: str | np.ndarray | None = None,
+    weights: str | np.ndarray | None = None,
+    seed: int | None = None,
 ) -> FormulaGLMDict:
     """
     Create a GLM model from a dict specification.
-    
+
     This is an alternative to the formula-based API for programmatic model building.
-    
+
     Parameters
     ----------
     response : str
@@ -2143,7 +2268,7 @@ def glm_dict(
     terms : dict
         Dictionary mapping variable names to term specifications.
         Each specification is a dict with 'type' and optional parameters:
-        
+
         - ``{"type": "linear"}`` - continuous variable
         - ``{"type": "categorical"}`` - dummy encoding
         - ``{"type": "categorical", "levels": ["A", "B"]}`` - specific levels
@@ -2154,7 +2279,7 @@ def glm_dict(
         - ``{"type": "target_encoding"}`` - target encoding
         - ``{"type": "expression", "expr": "x**2"}`` - expression
         - ``{"type": "linear", "monotonicity": "increasing"}`` - constrained
-        
+
     data : pl.DataFrame
         Polars DataFrame containing the data.
     interactions : list of dict, optional
@@ -2176,12 +2301,12 @@ def glm_dict(
         Prior weights.
     seed : int, optional
         Random seed for deterministic target encoding.
-        
+
     Returns
     -------
     FormulaGLMDict
         Model object. Call .fit() to fit the model.
-        
+
     Examples
     --------
     >>> result = rs.glm_dict(

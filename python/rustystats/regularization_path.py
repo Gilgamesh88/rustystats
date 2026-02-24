@@ -14,7 +14,7 @@ Key features:
 Example
 -------
 >>> import rustystats as rs
->>> 
+>>>
 >>> model = rs.glm_dict(
 ...     response="ClaimCount",
 ...     terms={"VehAge": {"type": "linear"}, "BonusMalus": {"type": "linear"}, "Region": {"type": "target_encoding"}},
@@ -22,44 +22,44 @@ Example
 ...     family="negbinomial",
 ...     offset="Exposure",
 ... )
->>> 
+>>>
 >>> # Fit with CV-based regularization selection
 >>> result = model.fit(cv=5, selection="1se", regularization="ridge")
->>> 
+>>>
 >>> print(f"Selected alpha: {result.alpha}")
 >>> print(f"CV deviance: {result.cv_deviance}")
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Literal, TYPE_CHECKING
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Literal
+
 import numpy as np
 
+from rustystats.constants import (
+    ALPHA_MAX_FLOOR,
+    DEFAULT_ALPHA_MIN_RATIO,
+    DEFAULT_CV_FOLDS,
+    DEFAULT_CV_SEED,
+    DEFAULT_ELASTIC_NET_L1_RATIO,
+    DEFAULT_MAX_ITER,
+    DEFAULT_N_ALPHAS,
+    DEFAULT_NEGBINOMIAL_THETA,
+    DEFAULT_TOLERANCE,
+    L1_RATIO_MIN_CLAMP,
+)
 from rustystats.exceptions import FittingError, ValidationError
 
-from rustystats.constants import (
-    DEFAULT_CV_FOLDS,
-    DEFAULT_N_ALPHAS,
-    DEFAULT_ALPHA_MIN_RATIO,
-    DEFAULT_MAX_ITER,
-    DEFAULT_TOLERANCE,
-    DEFAULT_NEGBINOMIAL_THETA,
-    DEFAULT_ELASTIC_NET_L1_RATIO,
-    DEFAULT_CV_SEED,
-    L1_RATIO_MIN_CLAMP,
-    ALPHA_MAX_FLOOR,
-)
-
 if TYPE_CHECKING:
-    import polars as pl
+    pass
 
 
 @dataclass
 class RegularizationPathResult:
     """
     Results from a single point on the regularization path.
-    
+
     Attributes
     ----------
     alpha : float
@@ -75,6 +75,7 @@ class RegularizationPathResult:
     max_coef : float
         Maximum absolute coefficient value
     """
+
     alpha: float
     l1_ratio: float
     cv_deviance_mean: float
@@ -87,7 +88,7 @@ class RegularizationPathResult:
 class RegularizationPathInfo:
     """
     Complete regularization path information.
-    
+
     Attributes
     ----------
     selected_alpha : float
@@ -102,28 +103,30 @@ class RegularizationPathInfo:
         "min" or "1se"
     regularization_type : str
         "ridge", "lasso", "elastic_net", or "none"
-    path : List[RegularizationPathResult]
+    path : list[RegularizationPathResult]
         Full path results for all alpha values tried
     n_folds : int
         Number of CV folds used
     """
+
     selected_alpha: float
     selected_l1_ratio: float
     cv_deviance: float
     cv_deviance_se: float
     selection_method: str
     regularization_type: str
-    path: List[RegularizationPathResult]
+    path: list[RegularizationPathResult]
     n_folds: int
 
 
 def _apply_inverse_link(eta: np.ndarray, link: str) -> np.ndarray:
     """Apply inverse link function to linear predictor.
-    
+
     Delegates to the shared implementation in formula.py which raises
     on unknown links instead of silently defaulting.
     """
     from rustystats.formula import apply_inverse_link
+
     return apply_inverse_link(eta, link)
 
 
@@ -131,14 +134,14 @@ def compute_alpha_max(
     X: np.ndarray,
     y: np.ndarray,
     l1_ratio: float,
-    weights: Optional[np.ndarray] = None,
+    weights: np.ndarray | None = None,
 ) -> float:
     """
     Compute the maximum alpha that would zero out all coefficients.
-    
+
     For Lasso/Elastic Net, this is based on the maximum gradient at beta=0.
     For Ridge, we use a heuristic based on the data scale.
-    
+
     Parameters
     ----------
     X : np.ndarray
@@ -149,22 +152,22 @@ def compute_alpha_max(
         L1 ratio (0=Ridge, 1=Lasso)
     weights : np.ndarray, optional
         Observation weights
-        
+
     Returns
     -------
     float
         Maximum alpha value
     """
-    n, p = X.shape
-    
+    n, _p = X.shape
+
     if weights is not None:
         w = weights / weights.sum() * n
     else:
         w = np.ones(n)
-    
+
     # Center y for gradient calculation
     y_centered = y - np.average(y, weights=w)
-    
+
     if l1_ratio > 0:
         # For Lasso/Elastic Net: max |X'Wy| / (n * l1_ratio)
         # Skip intercept column (usually first)
@@ -175,7 +178,7 @@ def compute_alpha_max(
         # Start with alpha that gives ~50% shrinkage on largest coefficient
         XtX_diag = np.sum(X[:, 1:] ** 2, axis=0) / n
         alpha_max = np.median(XtX_diag) * 10
-    
+
     return max(alpha_max, ALPHA_MAX_FLOOR)
 
 
@@ -186,7 +189,7 @@ def generate_alpha_path(
 ) -> np.ndarray:
     """
     Generate a logarithmically-spaced path of alpha values.
-    
+
     Parameters
     ----------
     alpha_max : float
@@ -195,7 +198,7 @@ def generate_alpha_path(
         Number of alpha values to generate
     alpha_min_ratio : float
         Ratio of alpha_min to alpha_max
-        
+
     Returns
     -------
     np.ndarray
@@ -208,11 +211,11 @@ def generate_alpha_path(
 def create_cv_folds(
     n: int,
     n_folds: int,
-    seed: Optional[int] = None,
-) -> List[Tuple[np.ndarray, np.ndarray]]:
+    seed: int | None = None,
+) -> list[tuple[np.ndarray, np.ndarray]]:
     """
     Create K-fold cross-validation indices.
-    
+
     Parameters
     ----------
     n : int
@@ -221,25 +224,25 @@ def create_cv_folds(
         Number of folds
     seed : int, optional
         Random seed for reproducibility
-        
+
     Returns
     -------
-    List[Tuple[np.ndarray, np.ndarray]]
+    list[tuple[np.ndarray, np.ndarray]]
         List of (train_indices, val_indices) tuples
     """
     rng = np.random.default_rng(seed)
     indices = rng.permutation(n)
     fold_sizes = np.full(n_folds, n // n_folds, dtype=int)
-    fold_sizes[:n % n_folds] += 1
-    
+    fold_sizes[: n % n_folds] += 1
+
     folds = []
     current = 0
     for fold_size in fold_sizes:
-        val_idx = indices[current:current + fold_size]
-        train_idx = np.concatenate([indices[:current], indices[current + fold_size:]])
+        val_idx = indices[current : current + fold_size]
+        train_idx = np.concatenate([indices[:current], indices[current + fold_size :]])
         folds.append((train_idx, val_idx))
         current += fold_size
-    
+
     return folds
 
 
@@ -248,11 +251,11 @@ def compute_deviance(
     mu: np.ndarray,
     family: str,
     theta: float = 1.0,
-    weights: Optional[np.ndarray] = None,
+    weights: np.ndarray | None = None,
 ) -> float:
     """
     Compute mean deviance for a GLM family.
-    
+
     Parameters
     ----------
     y : np.ndarray
@@ -265,35 +268,35 @@ def compute_deviance(
         Dispersion parameter for negative binomial
     weights : np.ndarray, optional
         Observation weights
-        
+
     Returns
     -------
     float
         Mean deviance
     """
     from rustystats._rustystats import compute_dataset_metrics_py as _rust_dataset_metrics
-    
+
     n_params = 1  # Placeholder, not used for deviance calculation
     metrics = _rust_dataset_metrics(y, mu, family, n_params)
     return metrics["mean_deviance"]
 
 
 def select_optimal_alpha(
-    path_results: List[RegularizationPathResult],
+    path_results: list[RegularizationPathResult],
     selection: Literal["min", "1se"] = "min",
 ) -> RegularizationPathResult:
     """
     Select optimal alpha from path results.
-    
+
     Parameters
     ----------
-    path_results : List[RegularizationPathResult]
+    path_results : list[RegularizationPathResult]
         Results from regularization path
     selection : str
         Selection method:
         - "min": Select alpha with minimum CV deviance
         - "1se": Select largest alpha within 1 SE of minimum (more conservative)
-        
+
     Returns
     -------
     RegularizationPathResult
@@ -301,28 +304,28 @@ def select_optimal_alpha(
     """
     # Filter out infinite deviances
     valid_results = [r for r in path_results if np.isfinite(r.cv_deviance_mean)]
-    
+
     if not valid_results:
         raise FittingError("All regularization path fits failed")
-    
+
     if selection == "min":
         # Select minimum CV deviance
         return min(valid_results, key=lambda r: r.cv_deviance_mean)
-    
+
     elif selection == "1se":
         # Find minimum and its SE
         min_result = min(valid_results, key=lambda r: r.cv_deviance_mean)
         threshold = min_result.cv_deviance_mean + min_result.cv_deviance_se
-        
+
         # Find largest alpha (most regularized) below threshold
         # Path is ordered from large alpha to small alpha
         for r in valid_results:
             if r.cv_deviance_mean <= threshold:
                 return r
-        
+
         # Fallback to minimum
         return min_result
-    
+
     else:
         raise ValidationError(f"Unknown selection method: {selection}")
 
@@ -334,18 +337,18 @@ def fit_cv_regularization_path(
     regularization: Literal["ridge", "lasso", "elastic_net"] = "ridge",
     n_alphas: int = DEFAULT_N_ALPHAS,
     alpha_min_ratio: float = DEFAULT_ALPHA_MIN_RATIO,
-    l1_ratio: Optional[float] = None,
+    l1_ratio: float | None = None,
     max_iter: int = DEFAULT_MAX_ITER,
     tol: float = DEFAULT_TOLERANCE,
-    seed: Optional[int] = None,
+    seed: int | None = None,
     include_unregularized: bool = True,
     verbose: bool = False,
 ) -> RegularizationPathInfo:
     """
     Fit regularization path with CV and return best model.
-    
+
     This is the main entry point for CV-based regularization tuning.
-    
+
     Parameters
     ----------
     glm_instance : FormulaGLM
@@ -372,14 +375,14 @@ def fit_cv_regularization_path(
         Include alpha=0 (unregularized) in comparison
     verbose : bool
         Print progress
-        
+
     Returns
     -------
-    Tuple[result, RegularizationPathInfo]
+    tuple[result, RegularizationPathInfo]
         The fitted result at optimal alpha and the path info
     """
     from rustystats._rustystats import fit_glm_py as _fit_glm_rust
-    
+
     # Determine l1_ratio based on regularization type
     if regularization == "ridge":
         effective_l1_ratio = 0.0
@@ -389,7 +392,7 @@ def fit_cv_regularization_path(
         effective_l1_ratio = l1_ratio if l1_ratio is not None else DEFAULT_ELASTIC_NET_L1_RATIO
     else:
         raise ValidationError(f"Unknown regularization type: {regularization}")
-    
+
     X = glm_instance.X
     y = glm_instance.y
     family = glm_instance.family
@@ -398,36 +401,45 @@ def fit_cv_regularization_path(
     theta = glm_instance.theta if glm_instance.theta is not None else DEFAULT_NEGBINOMIAL_THETA
     offset = glm_instance.offset
     weights = glm_instance.weights
-    
+
     # Compute alpha path
     alpha_max = compute_alpha_max(X, y, effective_l1_ratio, weights)
     alphas = generate_alpha_path(alpha_max, n_alphas, alpha_min_ratio)
-    
+
     if verbose:
         print(f"Fitting regularization path: {regularization}")
         print(f"  Alpha range: {alphas[-1]:.6f} to {alphas[0]:.6f}")
         print(f"  L1 ratio: {effective_l1_ratio}")
         print(f"  CV folds: {cv}")
-    
+
     # Use Rust parallel implementation (no fallback)
     from rustystats._rustystats import fit_cv_path_py as _fit_cv_path_rust
-    
+
     if verbose:
         print("  Using Rust parallel CV")
-    
+
     # Use relaxed settings for CV fold fits: full convergence is unnecessary
     # since we only need approximate coefficients to estimate validation deviance.
     cv_max_iter = min(max_iter, 10)
     cv_tol = max(tol, 1e-4)
-    
+
     rust_result = _fit_cv_path_rust(
-        y, X, family, link, var_power, theta,
-        offset, weights,
-        list(alphas), effective_l1_ratio,
-        cv, cv_max_iter, cv_tol,
+        y,
+        X,
+        family,
+        link,
+        var_power,
+        theta,
+        offset,
+        weights,
+        list(alphas),
+        effective_l1_ratio,
+        cv,
+        cv_max_iter,
+        cv_tol,
         seed if seed is not None else DEFAULT_CV_SEED,
     )
-    
+
     # Convert Rust result to path_results format
     path_results = [
         RegularizationPathResult(
@@ -440,26 +452,36 @@ def fit_cv_regularization_path(
         )
         for i in range(len(rust_result["alphas"]))
     ]
-    
+
     # Optionally include unregularized fit
     if include_unregularized:
         if verbose:
             print("  Fitting unregularized model for comparison...")
-        
+
         folds = create_cv_folds(len(y), cv, seed)
         fold_deviances = []
-        
+
         for train_idx, val_idx in folds:
             X_train, X_val = X[train_idx], X[val_idx]
             y_train, y_val = y[train_idx], y[val_idx]
             offset_train = offset[train_idx] if offset is not None else None
             offset_val = offset[val_idx] if offset is not None else None
             weights_train = weights[train_idx] if weights is not None else None
-            
+
             try:
                 result = _fit_glm_rust(
-                    y_train, X_train, family, link, var_power, theta,
-                    offset_train, weights_train, 0.0, 0.0, max_iter, tol
+                    y_train,
+                    X_train,
+                    family,
+                    link,
+                    var_power,
+                    theta,
+                    offset_train,
+                    weights_train,
+                    0.0,
+                    0.0,
+                    max_iter,
+                    tol,
                 )
             except ValueError:
                 continue
@@ -469,7 +491,7 @@ def fit_cv_regularization_path(
             mu_val = _apply_inverse_link(linear_pred, link)
             dev = compute_deviance(y_val, mu_val, family)
             fold_deviances.append(dev)
-        
+
         valid_deviances = [d for d in fold_deviances if np.isfinite(d)]
         if valid_deviances:
             unreg_result = RegularizationPathResult(
@@ -481,13 +503,13 @@ def fit_cv_regularization_path(
                 max_coef=0.0,  # Will be updated after final fit
             )
             path_results.append(unreg_result)
-    
+
     # Select optimal alpha
     best = select_optimal_alpha(path_results, selection)
-    
+
     if verbose:
         print(f"\nSelected: alpha={best.alpha:.6f}, CV deviance={best.cv_deviance_mean:.6f}")
-    
+
     # Determine regularization type for the selected model
     if best.alpha == 0.0:
         reg_type = "none"
@@ -497,7 +519,7 @@ def fit_cv_regularization_path(
         reg_type = "ridge"
     else:
         reg_type = "elastic_net"
-    
+
     # Create path info
     path_info = RegularizationPathInfo(
         selected_alpha=best.alpha,
@@ -509,5 +531,5 @@ def fit_cv_regularization_path(
         path=path_results,
         n_folds=cv,
     )
-    
+
     return path_info

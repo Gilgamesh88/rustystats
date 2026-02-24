@@ -44,9 +44,10 @@ use std::ops::Range;
 /// Penalty type for regularized GLMs.
 ///
 /// Controls which type of regularization is applied to the coefficients.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum Penalty {
     /// No regularization (standard GLM)
+    #[default]
     None,
 
     /// Ridge (L2) penalty: λ × Σβ²
@@ -154,7 +155,8 @@ impl SmoothPenalty {
 
         // Add parametric L2 penalty (diagonal, skip intercept at col 0)
         if let Some(l2) = self.parametric_l2 {
-            for i in 1..parametric_cols {  // Skip intercept
+            for i in 1..parametric_cols {
+                // Skip intercept
                 combined[[i, i]] += l2;
             }
         }
@@ -182,9 +184,9 @@ impl Default for SmoothPenalty {
 impl PartialEq for SmoothPenalty {
     fn eq(&self, other: &Self) -> bool {
         // Simple comparison - check lengths and lambdas
-        self.lambdas == other.lambdas && 
-        self.term_indices == other.term_indices &&
-        self.parametric_l2 == other.parametric_l2
+        self.lambdas == other.lambdas
+            && self.term_indices == other.term_indices
+            && self.parametric_l2 == other.parametric_l2
     }
 }
 
@@ -194,8 +196,16 @@ impl PartialEq for Penalty {
             (Penalty::None, Penalty::None) => true,
             (Penalty::Ridge(a), Penalty::Ridge(b)) => a == b,
             (Penalty::Lasso(a), Penalty::Lasso(b)) => a == b,
-            (Penalty::ElasticNet { lambda: l1, l1_ratio: r1 }, 
-             Penalty::ElasticNet { lambda: l2, l1_ratio: r2 }) => l1 == l2 && r1 == r2,
+            (
+                Penalty::ElasticNet {
+                    lambda: l1,
+                    l1_ratio: r1,
+                },
+                Penalty::ElasticNet {
+                    lambda: l2,
+                    l1_ratio: r2,
+                },
+            ) => l1 == l2 && r1 == r2,
             (Penalty::Smooth(a), Penalty::Smooth(b)) => a == b,
             _ => false,
         }
@@ -240,7 +250,7 @@ impl Penalty {
     pub fn can_use_irls(&self) -> bool {
         match self {
             Penalty::None | Penalty::Ridge(_) => true,
-            Penalty::Smooth(_) => true,  // Smooth penalty uses IRLS with penalty matrix
+            Penalty::Smooth(_) => true, // Smooth penalty uses IRLS with penalty matrix
             Penalty::ElasticNet { l1_ratio, .. } => *l1_ratio == 0.0,
             Penalty::Lasso(_) => false,
         }
@@ -295,7 +305,7 @@ impl Penalty {
             Penalty::Ridge(_) => 0.0,
             Penalty::Lasso(lambda) => *lambda,
             Penalty::ElasticNet { lambda, l1_ratio } => *lambda * l1_ratio,
-            Penalty::Smooth(_) => 0.0,  // Smooth penalties don't have L1 component
+            Penalty::Smooth(_) => 0.0, // Smooth penalties don't have L1 component
         }
     }
 
@@ -306,14 +316,8 @@ impl Penalty {
             Penalty::None => 0.0,
             Penalty::Ridge(lambda) | Penalty::Lasso(lambda) => *lambda,
             Penalty::ElasticNet { lambda, .. } => *lambda,
-            Penalty::Smooth(_) => 0.0,  // Per-term lambdas accessed via as_smooth()
+            Penalty::Smooth(_) => 0.0, // Per-term lambdas accessed via as_smooth()
         }
-    }
-}
-
-impl Default for Penalty {
-    fn default() -> Self {
-        Penalty::None
     }
 }
 
@@ -506,7 +510,7 @@ mod tests {
         let config = RegularizationConfig::ridge(0.1)
             .with_standardize(false)
             .with_intercept(true);
-        
+
         assert_eq!(config.penalty.l2_penalty(), 0.1);
         assert!(!config.standardize);
         assert!(config.fit_intercept);

@@ -10,8 +10,8 @@
 //
 // =============================================================================
 
-use ndarray::{Array1, Array2};
 use nalgebra::{DMatrix, DVector};
+use ndarray::{Array1, Array2};
 
 // =============================================================================
 // ndarray → nalgebra
@@ -28,7 +28,7 @@ pub fn to_dmatrix(a: &Array2<f64>) -> DMatrix<f64> {
     } else {
         a.as_standard_layout().to_owned()
     };
-    DMatrix::from_row_slice(nrows, ncols, contig.as_slice().unwrap())
+    DMatrix::from_row_slice(nrows, ncols, contig.as_slice().expect("contiguous array"))
 }
 
 /// Convert an ndarray Array1 to a nalgebra DVector.
@@ -92,7 +92,11 @@ pub fn invert_matrix(a: &Array2<f64>) -> Option<Array2<f64>> {
 /// This is the common pattern in WLS solvers where we need both
 /// the solution and the inverse for covariance computation.
 /// Returns (solution, inverse) or None if singular.
-pub fn solve_and_invert(a: &DMatrix<f64>, b: &DVector<f64>, p: usize) -> Option<(Array1<f64>, Array2<f64>)> {
+pub fn solve_and_invert(
+    a: &DMatrix<f64>,
+    b: &DVector<f64>,
+    p: usize,
+) -> Option<(Array1<f64>, Array2<f64>)> {
     if let Some(chol) = a.clone().cholesky() {
         let coefficients = chol.solve(b);
         let identity = DMatrix::identity(p, p);
@@ -130,8 +134,8 @@ pub fn solve_symmetric_matrix(a: &Array2<f64>, b: &Array2<f64>) -> Array2<f64> {
 
     // Last resort: SVD pseudo-inverse
     let svd = a_nalg.svd(true, true);
-    let u = svd.u.unwrap();
-    let v_t = svd.v_t.unwrap();
+    let u = svd.u.expect("SVD computed with u=true");
+    let v_t = svd.v_t.expect("SVD computed with v_t=true");
     let s = svd.singular_values;
     let tol = 1e-10 * s[0];
     let mut s_inv = DMatrix::zeros(n, n);

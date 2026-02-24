@@ -34,7 +34,7 @@ pub const SE_TOL: f64 = 1e-10;
 pub const COEF_ZERO_TOL: f64 = 1e-10;
 
 // =============================================================================
-// Numerical Stability Constants  
+// Numerical Stability Constants
 // =============================================================================
 
 /// Minimum value for predicted means (μ) in count/positive families.

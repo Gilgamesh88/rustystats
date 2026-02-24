@@ -18,8 +18,8 @@
 //
 // =============================================================================
 
-use ndarray::{Array1, Array2};
 use nalgebra::{DMatrix, DVector};
+use ndarray::{Array1, Array2};
 
 /// Result from Brent's optimization
 #[derive(Debug, Clone)]
@@ -31,11 +31,11 @@ pub struct BrentResult {
 }
 
 /// Brent's method for 1D minimization.
-/// 
+///
 /// Finds the minimum of f(x) in the interval [a, b].
 /// This is the gold standard for 1D optimization - guaranteed convergence,
 /// superlinear in most cases.
-/// 
+///
 /// # Arguments
 /// * `f` - Function to minimize
 /// * `a` - Lower bound of search interval
@@ -46,8 +46,8 @@ pub fn brent_minimize<F>(f: F, a: f64, b: f64, tol: f64, max_iter: usize) -> Bre
 where
     F: Fn(f64) -> f64,
 {
-    let golden = 0.381966011250105;  // (3 - sqrt(5)) / 2
-    
+    let golden = 0.381966011250105; // (3 - sqrt(5)) / 2
+
     let mut a = a;
     let mut b = b;
     let mut x = a + golden * (b - a);
@@ -56,15 +56,15 @@ where
     let mut fx = f(x);
     let mut fw = fx;
     let mut fv = fx;
-    
+
     let mut d: f64 = 0.0;
     let mut e: f64 = 0.0;
-    
+
     for iter in 0..max_iter {
         let mid = 0.5 * (a + b);
         let tol1 = tol * x.abs() + 1e-10;
         let tol2 = 2.0 * tol1;
-        
+
         // Check convergence
         if (x - mid).abs() <= tol2 - 0.5 * (b - a) {
             return BrentResult {
@@ -74,28 +74,28 @@ where
                 converged: true,
             };
         }
-        
+
         // Try parabolic interpolation
         let mut use_golden = true;
         let mut u;
-        
+
         if e.abs() > tol1 {
             // Fit parabola through x, w, v
             let r = (x - w) * (fx - fv);
             let q = (x - v) * (fx - fw);
             let p = (x - v) * q - (x - w) * r;
             let q = 2.0 * (q - r);
-            
+
             let (p, q) = if q > 0.0 { (-p, q) } else { (p, -q) };
-            
+
             let e_old = e;
             e = d;
-            
+
             // Accept parabolic step if it's in bounds and small enough
             if p.abs() < (0.5 * q * e_old).abs() && p > q * (a - x) && p < q * (b - x) {
                 d = p / q;
                 u = x + d;
-                
+
                 // Don't evaluate too close to endpoints
                 if u - a < tol2 || b - u < tol2 {
                     d = if x < mid { tol1 } else { -tol1 };
@@ -103,13 +103,13 @@ where
                 use_golden = false;
             }
         }
-        
+
         if use_golden {
             // Golden section step
             e = if x < mid { b - x } else { a - x };
             d = golden * e;
         }
-        
+
         // Evaluate at new point
         u = if d.abs() >= tol1 {
             x + d
@@ -118,9 +118,9 @@ where
         } else {
             x - tol1
         };
-        
+
         let fu = f(u);
-        
+
         // Update bracketing interval
         if fu <= fx {
             if u < x {
@@ -151,7 +151,7 @@ where
             }
         }
     }
-    
+
     BrentResult {
         x_min: x,
         f_min: fx,
@@ -172,7 +172,7 @@ fn compute_xtwx_xtwz_nalg(
 ) -> (DMatrix<f64>, DVector<f64>) {
     let n = x.nrows();
     let p = x.ncols();
-    
+
     let mut xtwx = DMatrix::zeros(p, p);
     for i in 0..n {
         let wi = w[i];
@@ -187,7 +187,7 @@ fn compute_xtwx_xtwz_nalg(
             }
         }
     }
-    
+
     let mut xtwz = DVector::zeros(p);
     for i in 0..n {
         let wz = w[i] * z[i];
@@ -195,7 +195,7 @@ fn compute_xtwx_xtwz_nalg(
             xtwz[j] += x[(i, j)] * wz;
         }
     }
-    
+
     (xtwx, xtwz)
 }
 
@@ -277,10 +277,14 @@ fn to_nalgebra(
 ) -> (DMatrix<f64>, DVector<f64>, DVector<f64>) {
     let n = x.nrows();
     let p = x.ncols();
-    let x_contig = if x.is_standard_layout() { x.clone() } else { x.as_standard_layout().to_owned() };
-    let x_nalg = DMatrix::from_row_slice(n, p, x_contig.as_slice().unwrap());
-    let z_nalg = DVector::from_row_slice(z.to_owned().as_slice().unwrap());
-    let w_nalg = DVector::from_row_slice(w.to_owned().as_slice().unwrap());
+    let x_contig = if x.is_standard_layout() {
+        x.clone()
+    } else {
+        x.as_standard_layout().to_owned()
+    };
+    let x_nalg = DMatrix::from_row_slice(n, p, x_contig.as_slice().expect("contiguous"));
+    let z_nalg = DVector::from_row_slice(z.to_owned().as_slice().expect("contiguous"));
+    let w_nalg = DVector::from_row_slice(w.to_owned().as_slice().expect("contiguous"));
     (x_nalg, z_nalg, w_nalg)
 }
 
@@ -289,7 +293,7 @@ fn to_nalgebra(
 // =============================================================================
 
 /// Cached matrices for fast GCV evaluation.
-/// 
+///
 /// These are computed once per IRLS iteration and reused for all lambda evaluations.
 #[derive(Debug, Clone)]
 pub struct GCVCache {
@@ -329,13 +333,18 @@ impl GCVCache {
     ) -> Self {
         let n = x.nrows();
         let k = penalty.nrows();
-        
+
         let (x_nalg, z_nalg, w_nalg) = to_nalgebra(x, z, w);
-        let penalty_contig = if penalty.is_standard_layout() { penalty.clone() } else { penalty.as_standard_layout().to_owned() };
-        let penalty_nalg = DMatrix::from_row_slice(k, k, penalty_contig.as_slice().unwrap());
-        
+        let penalty_contig = if penalty.is_standard_layout() {
+            penalty.clone()
+        } else {
+            penalty.as_standard_layout().to_owned()
+        };
+        let penalty_nalg =
+            DMatrix::from_row_slice(k, k, penalty_contig.as_slice().expect("contiguous"));
+
         let (xtwx, xtwz) = compute_xtwx_xtwz_nalg(&x_nalg, &z_nalg, &w_nalg);
-        
+
         Self {
             xtwx,
             xtwz,
@@ -350,36 +359,39 @@ impl GCVCache {
             w: w_nalg,
         }
     }
-    
+
     /// Evaluate GCV at a given lambda value.
-    /// 
+    ///
     /// This is the core function called by Brent's method.
     /// It computes coefficients, RSS, EDF, and GCV for the given lambda.
     pub fn evaluate_gcv(&self, log_lambda: f64) -> f64 {
         let lambda = log_lambda.exp();
         let p = self.xtwx.nrows();
         let col_range = (self.col_start, self.col_end);
-        
+
         let xtwx_pen = build_penalized_xtwx(
-            &self.xtwx, &[self.penalty.clone()], &[col_range], &[lambda],
+            &self.xtwx,
+            std::slice::from_ref(&self.penalty),
+            &[col_range],
+            &[lambda],
         );
-        
+
         let chol = match xtwx_pen.clone().cholesky() {
             Some(c) => c,
             None => return f64::INFINITY,
         };
-        
+
         let beta = chol.solve(&self.xtwz);
         let rss = compute_weighted_rss(&self.x, &self.z, &self.w, &beta);
-        
+
         let identity = DMatrix::identity(p, p);
         let xtwx_pen_inv = chol.solve(&identity);
         let edfs = compute_smooth_edfs_from_inv(&xtwx_pen_inv, &self.xtwx, &[col_range]);
         let total_edf = (self.n_parametric as f64) + edfs[0];
-        
+
         gcv_from_rss_edf(self.n, rss, total_edf)
     }
-    
+
     /// Find optimal lambda using Brent's method on log scale.
     pub fn optimize_lambda(
         &self,
@@ -393,42 +405,48 @@ impl GCVCache {
             log_lambda_min,
             log_lambda_max,
             tol,
-            50,  // Max iterations
+            50, // Max iterations
         );
-        
+
         let optimal_lambda = result.x_min.exp();
         let optimal_gcv = result.f_min;
-        
+
         // Compute EDF at optimal lambda
         let edf = self.compute_edf(optimal_lambda);
-        
+
         (optimal_lambda, edf, optimal_gcv)
     }
-    
+
     /// Compute EDF at a specific lambda.
     pub fn compute_edf(&self, lambda: f64) -> f64 {
         let p = self.xtwx.nrows();
         let col_range = (self.col_start, self.col_end);
-        
+
         let xtwx_pen = build_penalized_xtwx(
-            &self.xtwx, &[self.penalty.clone()], &[col_range], &[lambda],
+            &self.xtwx,
+            std::slice::from_ref(&self.penalty),
+            &[col_range],
+            &[lambda],
         );
-        
+
         let chol = match xtwx_pen.cholesky() {
             Some(c) => c,
             None => return (self.col_end - self.col_start) as f64,
         };
-        
+
         let identity = DMatrix::identity(p, p);
         let xtwx_pen_inv = chol.solve(&identity);
         compute_smooth_edfs_from_inv(&xtwx_pen_inv, &self.xtwx, &[col_range])[0]
     }
-    
+
     /// Solve for coefficients at a specific lambda.
     pub fn solve_coefficients(&self, lambda: f64) -> Option<DVector<f64>> {
         let col_range = (self.col_start, self.col_end);
         let xtwx_pen = build_penalized_xtwx(
-            &self.xtwx, &[self.penalty.clone()], &[col_range], &[lambda],
+            &self.xtwx,
+            std::slice::from_ref(&self.penalty),
+            &[col_range],
+            &[lambda],
         );
         xtwx_pen.cholesky().map(|chol| chol.solve(&self.xtwz))
     }
@@ -452,7 +470,7 @@ fn compute_rss_from_cached(
 }
 
 /// Fast GCV optimization for multiple smooth terms.
-/// 
+///
 /// Uses coordinate descent: optimize each lambda while holding others fixed.
 #[derive(Debug)]
 pub struct MultiTermGCVOptimizer {
@@ -480,10 +498,19 @@ impl MultiTermGCVOptimizer {
         n: usize,
         n_parametric: usize,
     ) -> Self {
-        let penalties_nalg: Vec<DMatrix<f64>> = penalties.iter()
+        let penalties_nalg: Vec<DMatrix<f64>> = penalties
+            .iter()
             .map(|pen| {
-                let contig = if pen.is_standard_layout() { pen.clone() } else { pen.as_standard_layout().to_owned() };
-                DMatrix::from_row_slice(pen.nrows(), pen.ncols(), contig.as_slice().unwrap())
+                let contig = if pen.is_standard_layout() {
+                    pen.clone()
+                } else {
+                    pen.as_standard_layout().to_owned()
+                };
+                DMatrix::from_row_slice(
+                    pen.nrows(),
+                    pen.ncols(),
+                    contig.as_slice().expect("contiguous"),
+                )
             })
             .collect();
 
@@ -508,19 +535,28 @@ impl MultiTermGCVOptimizer {
         n_parametric: usize,
     ) -> Self {
         let n = x.nrows();
-        
+
         let (x_nalg, z_nalg, w_nalg) = to_nalgebra(x, z, w);
         let (xtwx, xtwz) = compute_xtwx_xtwz_nalg(&x_nalg, &z_nalg, &w_nalg);
-        
+
         // Compute z'Wz
-        let ztwz = z_nalg.iter().zip(w_nalg.iter())
+        let ztwz = z_nalg
+            .iter()
+            .zip(w_nalg.iter())
             .map(|(&zi, &wi)| wi * zi * zi)
             .sum::<f64>();
-        
-        let penalties_nalg: Vec<DMatrix<f64>> = penalties.iter()
-            .map(|pen| DMatrix::from_row_slice(pen.nrows(), pen.ncols(), pen.as_slice().unwrap()))
+
+        let penalties_nalg: Vec<DMatrix<f64>> = penalties
+            .iter()
+            .map(|pen| {
+                DMatrix::from_row_slice(
+                    pen.nrows(),
+                    pen.ncols(),
+                    pen.as_slice().expect("contiguous"),
+                )
+            })
             .collect();
-        
+
         Self {
             xtwx,
             xtwz,
@@ -531,33 +567,31 @@ impl MultiTermGCVOptimizer {
             ztwz,
         }
     }
-    
+
     /// Evaluate GCV for given lambdas.
     pub fn evaluate_gcv(&self, lambdas: &[f64]) -> f64 {
         let p = self.xtwx.nrows();
-        
-        let xtwx_pen = build_penalized_xtwx(
-            &self.xtwx, &self.penalties, &self.col_ranges, lambdas,
-        );
-        
+
+        let xtwx_pen = build_penalized_xtwx(&self.xtwx, &self.penalties, &self.col_ranges, lambdas);
+
         let chol = match xtwx_pen.clone().cholesky() {
             Some(c) => c,
             None => return f64::INFINITY,
         };
-        
+
         let beta = chol.solve(&self.xtwz);
-        
+
         // Compute RSS from cached matrices: O(p²) instead of O(n·p)
         let rss = compute_rss_from_cached(&self.xtwx, &self.xtwz, self.ztwz, &beta);
-        
+
         let identity = DMatrix::identity(p, p);
         let xtwx_pen_inv = chol.solve(&identity);
         let edfs = compute_smooth_edfs_from_inv(&xtwx_pen_inv, &self.xtwx, &self.col_ranges);
         let total_edf = (self.n_parametric as f64) + edfs.iter().sum::<f64>();
-        
+
         gcv_from_rss_edf(self.n, rss, total_edf)
     }
-    
+
     /// Optimize all lambdas using coordinate descent.
     pub fn optimize_lambdas(
         &self,
@@ -568,10 +602,10 @@ impl MultiTermGCVOptimizer {
     ) -> Vec<f64> {
         let n_terms = self.penalties.len();
         let mut lambdas = vec![1.0; n_terms];
-        
+
         for _ in 0..max_outer_iter {
             let old_lambdas = lambdas.clone();
-            
+
             for term_idx in 0..n_terms {
                 // Optimize this term's lambda while holding others fixed
                 let result = brent_minimize(
@@ -585,37 +619,36 @@ impl MultiTermGCVOptimizer {
                     tol,
                     30,
                 );
-                
+
                 lambdas[term_idx] = result.x_min.exp();
             }
-            
+
             // Check convergence
-            let max_change: f64 = lambdas.iter()
+            let max_change: f64 = lambdas
+                .iter()
                 .zip(&old_lambdas)
                 .map(|(&new, &old)| ((new - old) / old.max(1e-10)).abs())
                 .fold(0.0, f64::max);
-            
+
             if max_change < 0.01 {
                 break;
             }
         }
-        
+
         lambdas
     }
-    
+
     /// Compute EDFs for each term at given lambdas.
     pub fn compute_edfs(&self, lambdas: &[f64]) -> Vec<f64> {
         let p = self.xtwx.nrows();
-        
-        let xtwx_pen = build_penalized_xtwx(
-            &self.xtwx, &self.penalties, &self.col_ranges, lambdas,
-        );
-        
+
+        let xtwx_pen = build_penalized_xtwx(&self.xtwx, &self.penalties, &self.col_ranges, lambdas);
+
         let chol = match xtwx_pen.cholesky() {
             Some(c) => c,
             None => return vec![0.0; lambdas.len()],
         };
-        
+
         let identity = DMatrix::identity(p, p);
         let xtwx_pen_inv = chol.solve(&identity);
         compute_smooth_edfs_from_inv(&xtwx_pen_inv, &self.xtwx, &self.col_ranges)
@@ -625,29 +658,29 @@ impl MultiTermGCVOptimizer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ndarray::{Array1, Array2};
-    use crate::splines::{bs_basis};
+    use crate::splines::bs_basis;
     use crate::splines::penalized::penalty_matrix;
+    use ndarray::{Array1, Array2};
 
     // =========================================================================
     // Brent's method unit tests
     // =========================================================================
-    
+
     #[test]
     fn test_brent_minimize_quadratic() {
         // Minimize (x - 2)^2
         let result = brent_minimize(|x| (x - 2.0).powi(2), 0.0, 5.0, 1e-6, 100);
-        
+
         assert!(result.converged);
         assert!((result.x_min - 2.0).abs() < 1e-5);
         assert!(result.f_min < 1e-10);
     }
-    
+
     #[test]
     fn test_brent_minimize_cosine() {
         // Minimize cos(x) in [2, 5] - minimum at π ≈ 3.14159
         let result = brent_minimize(|x| x.cos(), 2.0, 5.0, 1e-6, 100);
-        
+
         assert!(result.converged);
         assert!((result.x_min - std::f64::consts::PI).abs() < 1e-5);
     }
@@ -665,7 +698,18 @@ mod tests {
 
     /// Helper: build a simple smooth regression problem.
     /// Returns (x_combined, z, w, penalty, n_parametric, col_start, col_end)
-    fn simple_smooth_problem(n: usize, k: usize) -> (Array2<f64>, Array1<f64>, Array1<f64>, Array2<f64>, usize, usize, usize) {
+    fn simple_smooth_problem(
+        n: usize,
+        k: usize,
+    ) -> (
+        Array2<f64>,
+        Array1<f64>,
+        Array1<f64>,
+        Array2<f64>,
+        usize,
+        usize,
+        usize,
+    ) {
         let x_vals: Array1<f64> = (0..n).map(|i| i as f64 * 10.0 / n as f64).collect();
         let basis = bs_basis(&x_vals, k, 3, None, false);
         let k_actual = basis.ncols();
@@ -709,7 +753,11 @@ mod tests {
         // Evaluate at several log-lambda values
         for log_lam in [-5.0, -2.0, 0.0, 2.0, 5.0] {
             let gcv = cache.evaluate_gcv(log_lam);
-            assert!(gcv.is_finite(), "GCV should be finite at log_lambda={}", log_lam);
+            assert!(
+                gcv.is_finite(),
+                "GCV should be finite at log_lambda={}",
+                log_lam
+            );
             assert!(gcv >= 0.0, "GCV should be non-negative");
         }
     }
@@ -736,9 +784,12 @@ mod tests {
         let edf_low_lambda = cache.compute_edf(0.001);
         let edf_high_lambda = cache.compute_edf(1000.0);
 
-        assert!(edf_low_lambda > edf_high_lambda,
+        assert!(
+            edf_low_lambda > edf_high_lambda,
             "EDF at low lambda ({:.2}) should exceed EDF at high lambda ({:.2})",
-            edf_low_lambda, edf_high_lambda);
+            edf_low_lambda,
+            edf_high_lambda
+        );
     }
 
     #[test]
@@ -761,7 +812,9 @@ mod tests {
         // Multi-term optimizer with 1 term should behave like GCVCache
         let (x, z, w, penalty, n_param, col_start, col_end) = simple_smooth_problem(200, 10);
         let optimizer = MultiTermGCVOptimizer::new(
-            &x, &z, &w,
+            &x,
+            &z,
+            &w,
             vec![penalty],
             vec![(col_start, col_end)],
             n_param,
@@ -792,18 +845,27 @@ mod tests {
         let mut x = Array2::zeros((n, p_total));
         for i in 0..n {
             x[[i, 0]] = 1.0;
-            for j in 0..k1 { x[[i, 1 + j]] = basis1[[i, j]]; }
-            for j in 0..k2 { x[[i, 1 + k1 + j]] = basis2[[i, j]]; }
+            for j in 0..k1 {
+                x[[i, 1 + j]] = basis1[[i, j]];
+            }
+            for j in 0..k2 {
+                x[[i, 1 + k1 + j]] = basis2[[i, j]];
+            }
         }
 
-        let z: Array1<f64> = x_vals1.iter().zip(x_vals2.iter())
-            .map(|(&a, &b)| 2.0 + a.sin() + 0.5 * b.cos()).collect();
+        let z: Array1<f64> = x_vals1
+            .iter()
+            .zip(x_vals2.iter())
+            .map(|(&a, &b)| 2.0 + a.sin() + 0.5 * b.cos())
+            .collect();
         let w = Array1::ones(n);
         let penalty1 = penalty_matrix(k1, 2);
         let penalty2 = penalty_matrix(k2, 2);
 
         let optimizer = MultiTermGCVOptimizer::new(
-            &x, &z, &w,
+            &x,
+            &z,
+            &w,
             vec![penalty1, penalty2],
             vec![(1, 1 + k1), (1 + k1, 1 + k1 + k2)],
             1,
@@ -822,7 +884,9 @@ mod tests {
     fn test_multi_term_evaluate_gcv_finite() {
         let (x, z, w, penalty, n_param, col_start, col_end) = simple_smooth_problem(100, 8);
         let optimizer = MultiTermGCVOptimizer::new(
-            &x, &z, &w,
+            &x,
+            &z,
+            &w,
             vec![penalty],
             vec![(col_start, col_end)],
             n_param,

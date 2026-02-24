@@ -37,8 +37,8 @@ use crate::constants::ZERO_TOL;
 //
 // =============================================================================
 
-use ndarray::Array1;
 use crate::families::Family;
+use ndarray::Array1;
 
 /// Compute Pearson chi-squared statistic: X² = Σ(y-μ)²/V(μ)
 ///
@@ -65,15 +65,16 @@ pub fn pearson_chi2(
     weights: Option<&Array1<f64>>,
 ) -> f64 {
     let variance = family.variance(mu);
-    
-    let contributions: Array1<f64> = ndarray::Zip::from(y)
-        .and(mu)
-        .and(&variance)
-        .map_collect(|&yi, &mui, &vi| {
-            let diff = yi - mui;
-            (diff * diff) / vi.max(ZERO_TOL)
-        });
-    
+
+    let contributions: Array1<f64> =
+        ndarray::Zip::from(y)
+            .and(mu)
+            .and(&variance)
+            .map_collect(|&yi, &mui, &vi| {
+                let diff = yi - mui;
+                (diff * diff) / vi.max(ZERO_TOL)
+            });
+
     match weights {
         Some(w) => (&contributions * w).sum(),
         None => contributions.sum(),
@@ -107,7 +108,7 @@ pub fn estimate_dispersion_pearson(
     if df_resid == 0 {
         return 1.0;
     }
-    
+
     let chi2 = pearson_chi2(y, mu, family, weights);
     chi2 / (df_resid as f64)
 }
@@ -141,17 +142,17 @@ pub fn estimate_dispersion_deviance(deviance: f64, df_resid: usize) -> f64 {
 mod tests {
     use super::*;
     use crate::families::{GaussianFamily, PoissonFamily};
-    use ndarray::array;
     use approx::assert_abs_diff_eq;
+    use ndarray::array;
 
     #[test]
     fn test_pearson_chi2_gaussian() {
         let y = array![1.0, 2.0, 3.0];
-        let mu = array![1.0, 2.0, 3.0];  // Perfect fit
+        let mu = array![1.0, 2.0, 3.0]; // Perfect fit
         let family = GaussianFamily;
-        
+
         let chi2 = pearson_chi2(&y, &mu, &family, None);
-        
+
         // Perfect fit should have X² = 0
         assert_abs_diff_eq!(chi2, 0.0, epsilon = 1e-10);
     }
@@ -161,9 +162,9 @@ mod tests {
         let y = array![1.0, 2.0, 3.0];
         let mu = array![1.5, 2.0, 2.5];
         let family = GaussianFamily;
-        
+
         let chi2 = pearson_chi2(&y, &mu, &family, None);
-        
+
         // For Gaussian, V(μ) = 1, so X² = Σ(y-μ)²
         // = 0.25 + 0 + 0.25 = 0.5
         assert_abs_diff_eq!(chi2, 0.5, epsilon = 1e-10);
@@ -174,9 +175,9 @@ mod tests {
         let y = array![2.0, 4.0];
         let mu = array![2.0, 2.0];
         let family = PoissonFamily;
-        
+
         let chi2 = pearson_chi2(&y, &mu, &family, None);
-        
+
         // (2-2)²/2 + (4-2)²/2 = 0 + 4/2 = 2.0
         assert_abs_diff_eq!(chi2, 2.0, epsilon = 1e-10);
     }
@@ -187,9 +188,9 @@ mod tests {
         let mu = array![2.0, 2.0];
         let family = GaussianFamily;
         let weights = array![2.0, 1.0];
-        
+
         let chi2 = pearson_chi2(&y, &mu, &family, Some(&weights));
-        
+
         // (1-2)² × 2 + (2-2)² × 1 = 1 × 2 + 0 = 2.0
         assert_abs_diff_eq!(chi2, 2.0, epsilon = 1e-10);
     }
@@ -199,10 +200,10 @@ mod tests {
         let y = array![1.0, 2.0, 3.0, 4.0, 5.0];
         let mu = array![1.5, 2.0, 3.0, 4.0, 4.5];
         let family = GaussianFamily;
-        let df_resid = 3;  // 5 obs, 2 parameters
-        
+        let df_resid = 3; // 5 obs, 2 parameters
+
         let phi = estimate_dispersion_pearson(&y, &mu, &family, df_resid, None);
-        
+
         // X² = 0.25 + 0 + 0 + 0 + 0.25 = 0.5
         // φ = 0.5 / 3 ≈ 0.167
         assert_abs_diff_eq!(phi, 0.5 / 3.0, epsilon = 1e-10);
@@ -212,9 +213,9 @@ mod tests {
     fn test_dispersion_deviance() {
         let deviance = 10.0;
         let df_resid = 5;
-        
+
         let phi = estimate_dispersion_deviance(deviance, df_resid);
-        
+
         assert_abs_diff_eq!(phi, 2.0, epsilon = 1e-10);
     }
 
@@ -223,7 +224,7 @@ mod tests {
         // Edge case: saturated model with df_resid = 0
         let phi_dev = estimate_dispersion_deviance(10.0, 0);
         assert_abs_diff_eq!(phi_dev, 1.0, epsilon = 1e-10);
-        
+
         let y = array![1.0];
         let mu = array![1.0];
         let phi_pear = estimate_dispersion_pearson(&y, &mu, &GaussianFamily, 0, None);

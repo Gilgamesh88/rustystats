@@ -5,11 +5,11 @@
 // Rao's score tests for unfitted factors and statistical distribution CDFs.
 // =============================================================================
 
-use pyo3::prelude::*;
 use numpy::{PyReadonlyArray1, PyReadonlyArray2};
+use pyo3::prelude::*;
 
-use rustystats_core::inference::{score_test_continuous, score_test_categorical};
-use rustystats_core::diagnostics::{chi2_cdf, t_cdf, f_cdf};
+use rustystats_core::diagnostics::{chi2_cdf, f_cdf, t_cdf};
+use rustystats_core::inference::{score_test_categorical, score_test_continuous};
 
 // =============================================================================
 // Rao's Score Test for Unfitted Factors
@@ -48,15 +48,23 @@ pub fn score_test_continuous_py<'py>(
     let mu_arr = mu.as_array().to_owned();
     let weights_arr = weights.as_array().to_owned();
     let bread_arr = bread.as_array().to_owned();
-    
-    let result = score_test_continuous(&z_arr, &x_arr, &y_arr, &mu_arr, &weights_arr, &bread_arr, family);
-    
+
+    let result = score_test_continuous(
+        &z_arr,
+        &x_arr,
+        &y_arr,
+        &mu_arr,
+        &weights_arr,
+        &bread_arr,
+        family,
+    );
+
     let dict = pyo3::types::PyDict::new_bound(py);
     dict.set_item("statistic", result.statistic)?;
     dict.set_item("df", result.df)?;
     dict.set_item("pvalue", result.pvalue)?;
     dict.set_item("significant", result.significant)?;
-    
+
     Ok(dict)
 }
 
@@ -93,15 +101,23 @@ pub fn score_test_categorical_py<'py>(
     let mu_arr = mu.as_array().to_owned();
     let weights_arr = weights.as_array().to_owned();
     let bread_arr = bread.as_array().to_owned();
-    
-    let result = score_test_categorical(&z_arr, &x_arr, &y_arr, &mu_arr, &weights_arr, &bread_arr, family);
-    
+
+    let result = score_test_categorical(
+        &z_arr,
+        &x_arr,
+        &y_arr,
+        &mu_arr,
+        &weights_arr,
+        &bread_arr,
+        family,
+    );
+
     let dict = pyo3::types::PyDict::new_bound(py);
     dict.set_item("statistic", result.statistic)?;
     dict.set_item("df", result.df)?;
     dict.set_item("pvalue", result.pvalue)?;
     dict.set_item("significant", result.significant)?;
-    
+
     Ok(dict)
 }
 

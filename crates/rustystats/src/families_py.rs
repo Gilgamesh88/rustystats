@@ -6,28 +6,40 @@
 // Helper functions consolidate family/link dispatch logic used across the crate.
 // =============================================================================
 
-use pyo3::prelude::*;
-use pyo3::exceptions::PyValueError;
 use numpy::{IntoPyArray, PyArray1, PyReadonlyArray1};
+use pyo3::exceptions::PyValueError;
+use pyo3::prelude::*;
 
-use rustystats_core::families::{Family, GaussianFamily, PoissonFamily, BinomialFamily, GammaFamily, TweedieFamily, QuasiPoissonFamily, QuasiBinomialFamily, NegativeBinomialFamily};
-use rustystats_core::links::{Link, IdentityLink, LogLink, LogitLink};
+use rustystats_core::families::{
+    BinomialFamily, Family, GammaFamily, GaussianFamily, NegativeBinomialFamily, PoissonFamily,
+    QuasiBinomialFamily, QuasiPoissonFamily, TweedieFamily,
+};
+use rustystats_core::links::{IdentityLink, Link, LogLink, LogitLink};
 
 // =============================================================================
 // Family and Link Helper Functions
 // =============================================================================
 
 /// Get a Family trait object from a family name string.
-/// 
+///
 /// Handles case-insensitive matching and common aliases.
 /// `var_power` is used only for Tweedie; `theta` only for NegativeBinomial.
 /// Returns an error for unknown family names instead of silently defaulting.
-pub(crate) fn family_from_name(name: &str, var_power: f64, theta: f64) -> PyResult<Box<dyn Family>> {
+pub(crate) fn family_from_name(
+    name: &str,
+    var_power: f64,
+    theta: f64,
+) -> PyResult<Box<dyn Family>> {
     let lower = name.to_lowercase();
-    
+
     // Handle negativebinomial with optional theta parameter like "negativebinomial(theta=1.38)"
-    if lower.starts_with("negativebinomial") || lower.starts_with("negbinomial") || lower.starts_with("negbin")
-        || lower == "nb" || lower == "negative_binomial" || lower == "neg_binomial" || lower == "neg-binomial"
+    if lower.starts_with("negativebinomial")
+        || lower.starts_with("negbinomial")
+        || lower.starts_with("negbin")
+        || lower == "nb"
+        || lower == "negative_binomial"
+        || lower == "neg_binomial"
+        || lower == "neg-binomial"
     {
         // Parse theta from name if present, otherwise use the `theta` arg
         let parsed_theta = if let Some(start) = lower.find("theta=") {
@@ -44,11 +56,16 @@ pub(crate) fn family_from_name(name: &str, var_power: f64, theta: f64) -> PyResu
             theta
         };
         if parsed_theta <= 0.0 {
-            return Err(PyValueError::new_err(format!("theta must be > 0 for Negative Binomial, got {}", parsed_theta)));
+            return Err(PyValueError::new_err(format!(
+                "theta must be > 0 for Negative Binomial, got {}",
+                parsed_theta
+            )));
         }
-        return Ok(Box::new(NegativeBinomialFamily::new(parsed_theta).map_err(|e| PyValueError::new_err(e))?));
+        return Ok(Box::new(
+            NegativeBinomialFamily::new(parsed_theta).map_err(PyValueError::new_err)?,
+        ));
     }
-    
+
     match lower.as_str() {
         "gaussian" | "normal" => Ok(Box::new(GaussianFamily)),
         "poisson" => Ok(Box::new(PoissonFamily)),
@@ -56,15 +73,21 @@ pub(crate) fn family_from_name(name: &str, var_power: f64, theta: f64) -> PyResu
         "gamma" => Ok(Box::new(GammaFamily)),
         "tweedie" => {
             if var_power > 0.0 && var_power < 1.0 {
-                return Err(PyValueError::new_err(format!("var_power must be <= 0 or >= 1, got {}", var_power)));
+                return Err(PyValueError::new_err(format!(
+                    "var_power must be <= 0 or >= 1, got {}",
+                    var_power
+                )));
             }
-            Ok(Box::new(TweedieFamily::new(var_power).map_err(|e| PyValueError::new_err(e))?))
+            Ok(Box::new(
+                TweedieFamily::new(var_power).map_err(PyValueError::new_err)?,
+            ))
         }
         "quasipoisson" | "quasi-poisson" | "quasi_poisson" => Ok(Box::new(QuasiPoissonFamily)),
         "quasibinomial" | "quasi-binomial" | "quasi_binomial" => Ok(Box::new(QuasiBinomialFamily)),
         _ => Err(PyValueError::new_err(format!(
             "Unknown family '{}'. Use 'gaussian', 'poisson', 'binomial', 'gamma', 'tweedie', \
-             'quasipoisson', 'quasibinomial', or 'negativebinomial'.", name
+             'quasipoisson', 'quasibinomial', or 'negativebinomial'.",
+            name
         ))),
     }
 }
@@ -77,7 +100,8 @@ pub(crate) fn link_from_name(name: &str) -> PyResult<Box<dyn Link>> {
         "log" => Ok(Box::new(LogLink)),
         "logit" => Ok(Box::new(LogitLink)),
         _ => Err(PyValueError::new_err(format!(
-            "Unknown link '{}'. Use 'identity', 'log', or 'logit'.", name
+            "Unknown link '{}'. Use 'identity', 'log', or 'logit'.",
+            name
         ))),
     }
 }
@@ -87,7 +111,7 @@ pub(crate) fn default_link_name(family: &str) -> &'static str {
     match family.to_lowercase().as_str() {
         "gaussian" | "normal" => "identity",
         "binomial" | "quasibinomial" | "quasi-binomial" | "quasi_binomial" => "logit",
-        _ => "log",  // poisson, gamma, tweedie, quasipoisson, negbinomial, etc.
+        _ => "log", // poisson, gamma, tweedie, quasipoisson, negbinomial, etc.
     }
 }
 
@@ -120,16 +144,34 @@ macro_rules! impl_py_link {
                 self.inner.name()
             }
 
-            fn link<'py>(&self, py: Python<'py>, mu: PyReadonlyArray1<f64>) -> Bound<'py, PyArray1<f64>> {
-                self.inner.link(&mu.as_array().to_owned()).into_pyarray_bound(py)
+            fn link<'py>(
+                &self,
+                py: Python<'py>,
+                mu: PyReadonlyArray1<f64>,
+            ) -> Bound<'py, PyArray1<f64>> {
+                self.inner
+                    .link(&mu.as_array().to_owned())
+                    .into_pyarray_bound(py)
             }
 
-            fn inverse<'py>(&self, py: Python<'py>, eta: PyReadonlyArray1<f64>) -> Bound<'py, PyArray1<f64>> {
-                self.inner.inverse(&eta.as_array().to_owned()).into_pyarray_bound(py)
+            fn inverse<'py>(
+                &self,
+                py: Python<'py>,
+                eta: PyReadonlyArray1<f64>,
+            ) -> Bound<'py, PyArray1<f64>> {
+                self.inner
+                    .inverse(&eta.as_array().to_owned())
+                    .into_pyarray_bound(py)
             }
 
-            fn derivative<'py>(&self, py: Python<'py>, mu: PyReadonlyArray1<f64>) -> Bound<'py, PyArray1<f64>> {
-                self.inner.derivative(&mu.as_array().to_owned()).into_pyarray_bound(py)
+            fn derivative<'py>(
+                &self,
+                py: Python<'py>,
+                mu: PyReadonlyArray1<f64>,
+            ) -> Bound<'py, PyArray1<f64>> {
+                self.inner
+                    .derivative(&mu.as_array().to_owned())
+                    .into_pyarray_bound(py)
             }
         }
     };
@@ -169,16 +211,30 @@ macro_rules! impl_py_family {
                 self.inner.name()
             }
 
-            fn variance<'py>(&self, py: Python<'py>, mu: PyReadonlyArray1<f64>) -> Bound<'py, PyArray1<f64>> {
-                self.inner.variance(&mu.as_array().to_owned()).into_pyarray_bound(py)
+            fn variance<'py>(
+                &self,
+                py: Python<'py>,
+                mu: PyReadonlyArray1<f64>,
+            ) -> Bound<'py, PyArray1<f64>> {
+                self.inner
+                    .variance(&mu.as_array().to_owned())
+                    .into_pyarray_bound(py)
             }
 
-            fn unit_deviance<'py>(&self, py: Python<'py>, y: PyReadonlyArray1<f64>, mu: PyReadonlyArray1<f64>) -> Bound<'py, PyArray1<f64>> {
-                self.inner.unit_deviance(&y.as_array().to_owned(), &mu.as_array().to_owned()).into_pyarray_bound(py)
+            fn unit_deviance<'py>(
+                &self,
+                py: Python<'py>,
+                y: PyReadonlyArray1<f64>,
+                mu: PyReadonlyArray1<f64>,
+            ) -> Bound<'py, PyArray1<f64>> {
+                self.inner
+                    .unit_deviance(&y.as_array().to_owned(), &mu.as_array().to_owned())
+                    .into_pyarray_bound(py)
             }
 
             fn deviance(&self, y: PyReadonlyArray1<f64>, mu: PyReadonlyArray1<f64>) -> f64 {
-                self.inner.deviance(&y.as_array().to_owned(), &mu.as_array().to_owned(), None)
+                self.inner
+                    .deviance(&y.as_array().to_owned(), &mu.as_array().to_owned(), None)
             }
 
             fn default_link(&self) -> $default_link {
@@ -189,15 +245,51 @@ macro_rules! impl_py_family {
 }
 
 // Generate simple family wrappers (6 types × ~50 lines = ~300 lines → ~6 lines each)
-impl_py_family!(PyGaussianFamily, "GaussianFamily", GaussianFamily, GaussianFamily, PyIdentityLink);
-impl_py_family!(PyPoissonFamily, "PoissonFamily", PoissonFamily, PoissonFamily, PyLogLink);
-impl_py_family!(PyBinomialFamily, "BinomialFamily", BinomialFamily, BinomialFamily, PyLogitLink);
-impl_py_family!(PyGammaFamily, "GammaFamily", GammaFamily, GammaFamily, PyLogLink);
-impl_py_family!(PyQuasiPoissonFamily, "QuasiPoissonFamily", QuasiPoissonFamily, QuasiPoissonFamily, PyLogLink);
-impl_py_family!(PyQuasiBinomialFamily, "QuasiBinomialFamily", QuasiBinomialFamily, QuasiBinomialFamily, PyLogitLink);
+impl_py_family!(
+    PyGaussianFamily,
+    "GaussianFamily",
+    GaussianFamily,
+    GaussianFamily,
+    PyIdentityLink
+);
+impl_py_family!(
+    PyPoissonFamily,
+    "PoissonFamily",
+    PoissonFamily,
+    PoissonFamily,
+    PyLogLink
+);
+impl_py_family!(
+    PyBinomialFamily,
+    "BinomialFamily",
+    BinomialFamily,
+    BinomialFamily,
+    PyLogitLink
+);
+impl_py_family!(
+    PyGammaFamily,
+    "GammaFamily",
+    GammaFamily,
+    GammaFamily,
+    PyLogLink
+);
+impl_py_family!(
+    PyQuasiPoissonFamily,
+    "QuasiPoissonFamily",
+    QuasiPoissonFamily,
+    QuasiPoissonFamily,
+    PyLogLink
+);
+impl_py_family!(
+    PyQuasiBinomialFamily,
+    "QuasiBinomialFamily",
+    QuasiBinomialFamily,
+    QuasiBinomialFamily,
+    PyLogitLink
+);
 
 /// Tweedie family for mixed zeros and positive continuous data.
-/// 
+///
 /// Essential for insurance pure premium modeling (frequency × severity in one model).
 /// Variance function: V(μ) = μ^p where p is the variance power.
 ///
@@ -228,29 +320,36 @@ impl PyTweedieFamily {
     #[pyo3(signature = (var_power=1.5))]
     fn new(var_power: f64) -> PyResult<Self> {
         if var_power > 0.0 && var_power < 1.0 {
-            return Err(PyValueError::new_err(
-                format!("var_power must be <= 0 or >= 1, got {}", var_power)
-            ));
+            return Err(PyValueError::new_err(format!(
+                "var_power must be <= 0 or >= 1, got {}",
+                var_power
+            )));
         }
-        Ok(Self { inner: TweedieFamily::new(var_power).map_err(|e| PyValueError::new_err(e))? })
+        Ok(Self {
+            inner: TweedieFamily::new(var_power).map_err(PyValueError::new_err)?,
+        })
     }
-    
+
     fn name(&self) -> &str {
         self.inner.name()
     }
-    
+
     /// Get the variance power parameter
     #[getter]
     fn var_power(&self) -> f64 {
         self.inner.var_power
     }
-    
-    fn variance<'py>(&self, py: Python<'py>, mu: PyReadonlyArray1<f64>) -> Bound<'py, PyArray1<f64>> {
+
+    fn variance<'py>(
+        &self,
+        py: Python<'py>,
+        mu: PyReadonlyArray1<f64>,
+    ) -> Bound<'py, PyArray1<f64>> {
         let mu_array = mu.as_array().to_owned();
         let result = self.inner.variance(&mu_array);
         result.into_pyarray_bound(py)
     }
-    
+
     fn unit_deviance<'py>(
         &self,
         py: Python<'py>,
@@ -262,13 +361,13 @@ impl PyTweedieFamily {
         let result = self.inner.unit_deviance(&y_array, &mu_array);
         result.into_pyarray_bound(py)
     }
-    
+
     fn deviance(&self, y: PyReadonlyArray1<f64>, mu: PyReadonlyArray1<f64>) -> f64 {
         let y_array = y.as_array().to_owned();
         let mu_array = mu.as_array().to_owned();
         self.inner.deviance(&y_array, &mu_array, None)
     }
-    
+
     fn default_link(&self) -> PyLogLink {
         PyLogLink::new()
     }
@@ -310,11 +409,14 @@ impl PyNegativeBinomialFamily {
     #[pyo3(signature = (theta=1.0))]
     fn new(theta: f64) -> PyResult<Self> {
         if theta <= 0.0 {
-            return Err(PyValueError::new_err(
-                format!("theta must be > 0, got {}", theta)
-            ));
+            return Err(PyValueError::new_err(format!(
+                "theta must be > 0, got {}",
+                theta
+            )));
         }
-        Ok(Self { inner: NegativeBinomialFamily::new(theta).map_err(|e| PyValueError::new_err(e))? })
+        Ok(Self {
+            inner: NegativeBinomialFamily::new(theta).map_err(PyValueError::new_err)?,
+        })
     }
 
     fn name(&self) -> &str {
@@ -333,7 +435,11 @@ impl PyNegativeBinomialFamily {
         self.inner.alpha()
     }
 
-    fn variance<'py>(&self, py: Python<'py>, mu: PyReadonlyArray1<f64>) -> Bound<'py, PyArray1<f64>> {
+    fn variance<'py>(
+        &self,
+        py: Python<'py>,
+        mu: PyReadonlyArray1<f64>,
+    ) -> Bound<'py, PyArray1<f64>> {
         let mu_array = mu.as_array().to_owned();
         let result = self.inner.variance(&mu_array);
         result.into_pyarray_bound(py)

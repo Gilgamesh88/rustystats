@@ -50,3 +50,13 @@ rayon = "1.10"                             # Data parallelism for multi-threaded
 # --- Statistical Functions ---
 # statrs provides probability distributions for p-value calculations
 statrs = "0.18"                            # Statistical distributions & functions
+
+# =============================================================================
+# Workspace Lints
+# =============================================================================
+[workspace.lints.clippy]
+unwrap_used = "warn"
+excessive_precision = "allow"       # Lanczos/gamma coefficients need exact bit patterns
+too_many_arguments = "allow"        # math solvers have many parameters by nature
+needless_range_loop = "allow"       # index-based loops are clearer in numeric code
+should_implement_trait = "allow"    # from_str/default helpers that aren't the std trait

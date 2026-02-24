@@ -6,9 +6,9 @@
 // encoding functions.
 // =============================================================================
 
-use pyo3::prelude::*;
-use numpy::{IntoPyArray, PyArray1, PyReadonlyArray1};
 use ndarray::Array1;
+use numpy::{IntoPyArray, PyArray1, PyReadonlyArray1};
+use pyo3::prelude::*;
 
 use rustystats_core::target_encoding;
 
@@ -47,23 +47,29 @@ pub fn target_encode_py<'py>(
     prior_weight: f64,
     n_permutations: usize,
     seed: Option<u64>,
-) -> PyResult<(Bound<'py, PyArray1<f64>>, String, f64, std::collections::HashMap<String, (f64, usize)>)> {
+) -> PyResult<(
+    Bound<'py, PyArray1<f64>>,
+    String,
+    f64,
+    std::collections::HashMap<String, (f64, usize)>,
+)> {
     let target_vec: Vec<f64> = target.as_array().to_vec();
-    
+
     let config = target_encoding::TargetEncodingConfig {
         prior_weight,
         n_permutations,
         seed,
     };
-    
+
     let enc = target_encoding::target_encode(&categories, &target_vec, var_name, &config);
-    
+
     // Convert level_stats to Python-friendly format
-    let stats: std::collections::HashMap<String, (f64, usize)> = enc.level_stats
+    let stats: std::collections::HashMap<String, (f64, usize)> = enc
+        .level_stats
         .into_iter()
         .map(|(k, v)| (k, (v.sum_target, v.count)))
         .collect();
-    
+
     Ok((
         enc.values.into_pyarray_bound(py),
         enc.name,
@@ -102,7 +108,7 @@ pub fn apply_target_encoding_py<'py>(
 ) -> PyResult<Bound<'py, PyArray1<f64>>> {
     let n = categories.len();
     let mut values = Vec::with_capacity(n);
-    
+
     for cat in &categories {
         let encoded = if let Some(&(sum_target, count)) = level_stats.get(cat) {
             (sum_target + prior * prior_weight) / (count as f64 + prior_weight)
@@ -112,7 +118,7 @@ pub fn apply_target_encoding_py<'py>(
         };
         values.push(encoded);
     }
-    
+
     Ok(Array1::from_vec(values).into_pyarray_bound(py))
 }
 
@@ -155,24 +161,36 @@ pub fn target_encode_with_exposure_py<'py>(
     prior_weight: f64,
     n_permutations: usize,
     seed: Option<u64>,
-) -> PyResult<(Bound<'py, PyArray1<f64>>, String, f64, std::collections::HashMap<String, (f64, f64)>)> {
+) -> PyResult<(
+    Bound<'py, PyArray1<f64>>,
+    String,
+    f64,
+    std::collections::HashMap<String, (f64, f64)>,
+)> {
     let claims_vec: Vec<f64> = claims.as_array().to_vec();
     let exposure_vec: Vec<f64> = exposure.as_array().to_vec();
-    
+
     let config = target_encoding::TargetEncodingConfig {
         prior_weight,
         n_permutations,
         seed,
     };
-    
-    let enc = target_encoding::target_encode_with_exposure(&categories, &claims_vec, &exposure_vec, var_name, &config);
-    
+
+    let enc = target_encoding::target_encode_with_exposure(
+        &categories,
+        &claims_vec,
+        &exposure_vec,
+        var_name,
+        &config,
+    );
+
     // Convert level_stats to Python-friendly format
-    let stats: std::collections::HashMap<String, (f64, f64)> = enc.level_stats
+    let stats: std::collections::HashMap<String, (f64, f64)> = enc
+        .level_stats
         .into_iter()
         .map(|(k, v)| (k, (v.sum_claims, v.sum_exposure)))
         .collect();
-    
+
     Ok((
         enc.values.into_pyarray_bound(py),
         enc.name,
@@ -211,7 +229,7 @@ pub fn apply_exposure_weighted_target_encoding_py<'py>(
 ) -> PyResult<Bound<'py, PyArray1<f64>>> {
     let n = categories.len();
     let mut values = Vec::with_capacity(n);
-    
+
     for cat in &categories {
         let encoded = if let Some(&(sum_claims, sum_exposure)) = level_stats.get(cat) {
             (sum_claims + prior * prior_weight) / (sum_exposure + prior_weight)
@@ -221,7 +239,7 @@ pub fn apply_exposure_weighted_target_encoding_py<'py>(
         };
         values.push(encoded);
     }
-    
+
     Ok(Array1::from_vec(values).into_pyarray_bound(py))
 }
 
@@ -248,9 +266,15 @@ pub fn frequency_encode_py<'py>(
     py: Python<'py>,
     categories: Vec<String>,
     var_name: &str,
-) -> PyResult<(Bound<'py, PyArray1<f64>>, String, std::collections::HashMap<String, usize>, usize, usize)> {
+) -> PyResult<(
+    Bound<'py, PyArray1<f64>>,
+    String,
+    std::collections::HashMap<String, usize>,
+    usize,
+    usize,
+)> {
     let enc = target_encoding::frequency_encode(&categories, var_name);
-    
+
     Ok((
         enc.values.into_pyarray_bound(py),
         enc.name,
@@ -289,7 +313,7 @@ pub fn apply_frequency_encoding_py<'py>(
             count as f64 / max_count as f64
         })
         .collect();
-    
+
     Ok(Array1::from_vec(values).into_pyarray_bound(py))
 }
 
@@ -333,23 +357,36 @@ pub fn target_encode_interaction_py<'py>(
     prior_weight: f64,
     n_permutations: usize,
     seed: Option<u64>,
-) -> PyResult<(Bound<'py, PyArray1<f64>>, String, f64, std::collections::HashMap<String, (f64, usize)>)> {
+) -> PyResult<(
+    Bound<'py, PyArray1<f64>>,
+    String,
+    f64,
+    std::collections::HashMap<String, (f64, usize)>,
+)> {
     let target_vec: Vec<f64> = target.as_array().to_vec();
-    
+
     let config = target_encoding::TargetEncodingConfig {
         prior_weight,
         n_permutations,
         seed,
     };
-    
-    let enc = target_encoding::target_encode_interaction(&cat1, &cat2, &target_vec, var_name1, var_name2, &config);
-    
+
+    let enc = target_encoding::target_encode_interaction(
+        &cat1,
+        &cat2,
+        &target_vec,
+        var_name1,
+        var_name2,
+        &config,
+    );
+
     // Convert level_stats to Python-friendly format
-    let stats: std::collections::HashMap<String, (f64, usize)> = enc.level_stats
+    let stats: std::collections::HashMap<String, (f64, usize)> = enc
+        .level_stats
         .into_iter()
         .map(|(k, v)| (k, (v.sum_target, v.count)))
         .collect();
-    
+
     Ok((
         enc.values.into_pyarray_bound(py),
         enc.name,
@@ -403,26 +440,38 @@ pub fn target_encode_interaction_with_exposure_py<'py>(
     prior_weight: f64,
     n_permutations: usize,
     seed: Option<u64>,
-) -> PyResult<(Bound<'py, PyArray1<f64>>, String, f64, std::collections::HashMap<String, (f64, f64)>)> {
+) -> PyResult<(
+    Bound<'py, PyArray1<f64>>,
+    String,
+    f64,
+    std::collections::HashMap<String, (f64, f64)>,
+)> {
     let claims_vec: Vec<f64> = claims.as_array().to_vec();
     let exposure_vec: Vec<f64> = exposure.as_array().to_vec();
-    
+
     let config = target_encoding::TargetEncodingConfig {
         prior_weight,
         n_permutations,
         seed,
     };
-    
+
     let enc = target_encoding::target_encode_interaction_with_exposure(
-        &cat1, &cat2, &claims_vec, &exposure_vec, var_name1, var_name2, &config
+        &cat1,
+        &cat2,
+        &claims_vec,
+        &exposure_vec,
+        var_name1,
+        var_name2,
+        &config,
     );
-    
+
     // Convert level_stats to Python-friendly format
-    let stats: std::collections::HashMap<String, (f64, f64)> = enc.level_stats
+    let stats: std::collections::HashMap<String, (f64, f64)> = enc
+        .level_stats
         .into_iter()
         .map(|(k, v)| (k, (v.sum_claims, v.sum_exposure)))
         .collect();
-    
+
     Ok((
         enc.values.into_pyarray_bound(py),
         enc.name,

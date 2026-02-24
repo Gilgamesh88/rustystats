@@ -51,9 +51,9 @@ pub fn pvalue_z(z: f64) -> f64 {
     if !z.is_finite() {
         return f64::NAN;
     }
-    
-    let normal = Normal::new(0.0, 1.0).unwrap();
-    
+
+    let normal = Normal::new(0.0, 1.0).expect("standard normal");
+
     // Two-tailed test: probability in both tails
     // P(|Z| > |z|) = 2 * P(Z > |z|) = 2 * (1 - Φ(|z|))
     2.0 * (1.0 - normal.cdf(z.abs()))
@@ -74,17 +74,17 @@ pub fn pvalue_t(t: f64, df: f64) -> f64 {
     if !t.is_finite() || df <= 0.0 {
         return f64::NAN;
     }
-    
+
     // For very large df, use normal approximation for efficiency
     if df > 1000.0 {
         return pvalue_z(t);
     }
-    
+
     let t_dist = match StudentsT::new(0.0, 1.0, df) {
         Ok(d) => d,
         Err(_) => return f64::NAN,
     };
-    
+
     // Two-tailed test
     2.0 * (1.0 - t_dist.cdf(t.abs()))
 }
@@ -112,13 +112,13 @@ pub fn confidence_interval_z(estimate: f64, std_error: f64, confidence: f64) -> 
     if !estimate.is_finite() || !std_error.is_finite() || std_error <= 0.0 {
         return (f64::NAN, f64::NAN);
     }
-    
-    let normal = Normal::new(0.0, 1.0).unwrap();
-    
+
+    let normal = Normal::new(0.0, 1.0).expect("standard normal");
+
     // For 95% CI, alpha = 0.05, so we need z_{0.975}
     let alpha = 1.0 - confidence;
     let z_critical = normal.inverse_cdf(1.0 - alpha / 2.0);
-    
+
     let margin = z_critical * std_error;
     (estimate - margin, estimate + margin)
 }
@@ -142,20 +142,20 @@ pub fn confidence_interval_t(
     if !estimate.is_finite() || !std_error.is_finite() || std_error <= 0.0 || df <= 0.0 {
         return (f64::NAN, f64::NAN);
     }
-    
+
     // For very large df, use z approximation
     if df > 1000.0 {
         return confidence_interval_z(estimate, std_error, confidence);
     }
-    
+
     let t_dist = match StudentsT::new(0.0, 1.0, df) {
         Ok(d) => d,
         Err(_) => return (f64::NAN, f64::NAN),
     };
-    
+
     let alpha = 1.0 - confidence;
     let t_critical = t_dist.inverse_cdf(1.0 - alpha / 2.0);
-    
+
     let margin = t_critical * std_error;
     (estimate - margin, estimate + margin)
 }
@@ -273,25 +273,33 @@ pub fn robust_covariance(
 ) -> Array2<f64> {
     let n = x.nrows();
     let p = x.ncols();
-    
+
     // Combined weights
     let combined_weights: Array1<f64> = prior_weights
         .iter()
         .zip(irls_weights.iter())
         .map(|(&pw, &iw)| pw * iw)
         .collect();
-    
+
     // Compute leverage values for HC2/HC3 if needed
     let leverage = if matches!(hc_type, HCType::HC2 | HCType::HC3) {
         compute_leverage(x, &combined_weights, bread)
     } else {
         Array1::zeros(n)
     };
-    
+
     // Compute the "meat" matrix: X' Ω X
     // Ω is diagonal with entries that depend on HC type
-    let meat = compute_meat(x, pearson_resid, &combined_weights, &leverage, hc_type, n, p);
-    
+    let meat = compute_meat(
+        x,
+        pearson_resid,
+        &combined_weights,
+        &leverage,
+        hc_type,
+        n,
+        p,
+    );
+
     // Sandwich: bread × meat × bread
     bread.dot(&meat).dot(bread)
 }
@@ -309,17 +317,17 @@ fn compute_leverage(
 ) -> Array1<f64> {
     let n = x.nrows();
     let p = x.ncols();
-    
+
     // Convert cov_unscaled to a flat vec for thread-safe access
     let cov_flat: Vec<f64> = cov_unscaled.iter().copied().collect();
-    
+
     // PARALLEL: Compute leverage for each observation
     let leverage_vec: Vec<f64> = (0..n)
         .into_par_iter()
         .map(|i| {
             let x_i = x.row(i);
             let w_i = weights[i];
-            
+
             // Compute x_i' × (X'WX)⁻¹ × x_i manually for thread safety
             let mut h_ii = 0.0;
             for j in 0..p {
@@ -330,12 +338,12 @@ fn compute_leverage(
                 h_ii += x_i[j] * temp_j;
             }
             h_ii *= w_i;
-            
+
             // Clamp to avoid numerical issues (h should be in [0, 1])
             h_ii.clamp(0.0, 0.9999)
         })
         .collect();
-    
+
     Array1::from_vec(leverage_vec)
 }
 
@@ -393,13 +401,13 @@ fn compute_meat(
                 .collect()
         }
     };
-    
+
     // Compute X' Ω X where Ω = diag(omega)
     // This is equivalent to: sum over i of omega[i] * x_i * x_i'
     // PARALLEL: Use fold-reduce pattern for thread-safe accumulation
     let p = x.ncols();
     let n = x.nrows();
-    
+
     let meat_flat: Vec<f64> = (0..n)
         .into_par_iter()
         .fold(
@@ -426,7 +434,7 @@ fn compute_meat(
                 a
             },
         );
-    
+
     // Convert to Array2 and fill symmetric entries
     let mut meat = Array2::zeros((p, p));
     for j in 0..p {
@@ -436,16 +444,14 @@ fn compute_meat(
             meat[[k, j]] = val;
         }
     }
-    
+
     meat
 }
 
 /// Compute robust standard errors from robust covariance matrix.
 pub fn robust_standard_errors(robust_cov: &Array2<f64>) -> Array1<f64> {
     let p = robust_cov.nrows();
-    (0..p)
-        .map(|i| robust_cov[[i, i]].max(0.0).sqrt())
-        .collect()
+    (0..p).map(|i| robust_cov[[i, i]].max(0.0).sqrt()).collect()
 }
 
 // =============================================================================
@@ -511,7 +517,7 @@ pub fn score_test_continuous(
     _family: &str,
 ) -> ScoreTestResult {
     // The score test checks if adding variable z would improve the model.
-    // 
+    //
     // For GLMs, the IRLS weights passed in are: w_i = 1 / (V(μ_i) * g'(μ_i)²)
     // For Poisson with log link: w_i = μ_i
     // For Gaussian with identity: w_i = 1
@@ -521,23 +527,25 @@ pub fn score_test_continuous(
     //
     // Score statistic: S = U' I_zz^{-1} U ~ χ²(df)
     // where I_zz = Z'WZ - Z'WX (X'WX)^{-1} X'WZ
-    
+
     // Score: U = Σ z_i (y_i - μ_i)
-    let u: f64 = z.iter()
+    let u: f64 = z
+        .iter()
         .zip(y.iter())
         .zip(mu.iter())
         .map(|((&zi, &yi), &mui)| zi * (yi - mui))
         .sum();
-    
+
     // Information: I_zz = Z'WZ - Z'WX (X'WX)^-1 X'WZ
     // where W = diag(weights) is the IRLS weight matrix
-    
+
     // Z'WZ (scalar)
-    let zwz: f64 = z.iter()
+    let zwz: f64 = z
+        .iter()
         .zip(weights.iter())
         .map(|(&zi, &wi)| zi * zi * wi)
         .sum();
-    
+
     // Z'WX (1 × p vector)
     let p = x.ncols();
     let zwx: Array1<f64> = (0..p)
@@ -549,26 +557,24 @@ pub fn score_test_continuous(
                 .sum()
         })
         .collect();
-    
+
     // (X'WX)^-1 X'WZ = bread × (Z'WX)^T = bread × zwx
     let bread_zwx: Array1<f64> = (0..p)
-        .map(|i| {
-            (0..p).map(|j| bread[[i, j]] * zwx[j]).sum::<f64>()
-        })
+        .map(|i| (0..p).map(|j| bread[[i, j]] * zwx[j]).sum::<f64>())
         .collect();
-    
+
     // Z'WX (X'WX)^-1 X'WZ = zwx · bread_zwx (dot product)
     let correction: f64 = zwx.iter().zip(bread_zwx.iter()).map(|(&a, &b)| a * b).sum();
-    
+
     // Information for Z after adjusting for X
     let info = zwz - correction;
-    
+
     // Score statistic: S = U² / I
     let statistic = if info > 1e-10 { u * u / info } else { 0.0 };
-    
+
     // P-value from chi-squared with df=1
     let pvalue = 1.0 - chi2_cdf_internal(statistic, 1.0);
-    
+
     ScoreTestResult {
         statistic,
         df: 1,
@@ -602,7 +608,7 @@ pub fn score_test_categorical(
     let _n = z_matrix.nrows();
     let k = z_matrix.ncols(); // df = k (number of dummy columns)
     let p = x.ncols();
-    
+
     if k == 0 {
         return ScoreTestResult {
             statistic: 0.0,
@@ -611,41 +617,51 @@ pub fn score_test_categorical(
             significant: false,
         };
     }
-    
+
     // Compute variance function values
     let variance = compute_variance(mu, family);
-    
+
     // Working weights: w_i * V(μ_i)
-    let w: Array1<f64> = weights.iter()
+    let w: Array1<f64> = weights
+        .iter()
         .zip(variance.iter())
         .map(|(&wi, &vi)| wi * vi)
         .collect();
-    
+
     // Pearson residuals scaled by sqrt(weight)
-    let weighted_resid: Array1<f64> = y.iter()
+    let weighted_resid: Array1<f64> = y
+        .iter()
         .zip(mu.iter())
         .zip(weights.iter())
         .zip(variance.iter())
         .map(|(((&yi, &mui), &wi), &vi)| {
-            if vi > 1e-10 { wi * (yi - mui) / vi.sqrt() } else { 0.0 }
+            if vi > 1e-10 {
+                wi * (yi - mui) / vi.sqrt()
+            } else {
+                0.0
+            }
         })
         .collect();
-    
+
     // Score vector: U = Z' W (y - μ) / sqrt(V) = Z' weighted_resid (k × 1)
     let u: Array1<f64> = (0..k)
         .map(|j| {
-            z_matrix.column(j).iter()
+            z_matrix
+                .column(j)
+                .iter()
                 .zip(weighted_resid.iter())
                 .map(|(&zj, &r)| zj * r)
                 .sum()
         })
         .collect();
-    
+
     // Z'WZ (k × k matrix)
     let mut zwz = Array2::<f64>::zeros((k, k));
     for i in 0..k {
         for j in i..k {
-            let val: f64 = z_matrix.column(i).iter()
+            let val: f64 = z_matrix
+                .column(i)
+                .iter()
                 .zip(z_matrix.column(j).iter())
                 .zip(w.iter())
                 .map(|((&zi, &zj), &wi)| zi * zj * wi)
@@ -654,19 +670,21 @@ pub fn score_test_categorical(
             zwz[[j, i]] = val;
         }
     }
-    
+
     // Z'WX (k × p matrix)
     let mut zwx = Array2::<f64>::zeros((k, p));
     for i in 0..k {
         for j in 0..p {
-            zwx[[i, j]] = z_matrix.column(i).iter()
+            zwx[[i, j]] = z_matrix
+                .column(i)
+                .iter()
                 .zip(x.column(j).iter())
                 .zip(w.iter())
                 .map(|((&zi, &xj), &wi)| zi * xj * wi)
                 .sum();
         }
     }
-    
+
     // X'WZ = (Z'WX)' (p × k matrix) - we'll compute (X'WX)^-1 X'WZ = bread × X'WZ
     // Result is p × k
     let mut bread_xwz = Array2::<f64>::zeros((p, k));
@@ -679,7 +697,7 @@ pub fn score_test_categorical(
             bread_xwz[[i, j]] = val;
         }
     }
-    
+
     // Z'WX (X'WX)^-1 X'WZ = ZWX × bread_xwz (k × k matrix)
     let mut correction = Array2::<f64>::zeros((k, k));
     for i in 0..k {
@@ -691,7 +709,7 @@ pub fn score_test_categorical(
             correction[[i, j]] = val;
         }
     }
-    
+
     // Information matrix: I = Z'WZ - correction (k × k)
     let mut info = Array2::<f64>::zeros((k, k));
     for i in 0..k {
@@ -699,17 +717,14 @@ pub fn score_test_categorical(
             info[[i, j]] = zwz[[i, j]] - correction[[i, j]];
         }
     }
-    
+
     // Score statistic: S = U' I^-1 U
     // Need to invert the k × k information matrix
-    let statistic = match invert_and_quadratic(&info, &u) {
-        Some(s) => s,
-        None => 0.0, // Singular matrix
-    };
-    
+    let statistic = invert_and_quadratic(&info, &u).unwrap_or(0.0);
+
     // P-value from chi-squared with df = k
     let pvalue = 1.0 - chi2_cdf_internal(statistic, k as f64);
-    
+
     ScoreTestResult {
         statistic,
         df: k,
@@ -721,9 +736,12 @@ pub fn score_test_categorical(
 /// Compute variance function for a family
 fn compute_variance(mu: &Array1<f64>, family: &str) -> Array1<f64> {
     let lower = family.to_lowercase();
-    
+
     // Handle NegBin with theta parameter
-    if lower.starts_with("negativebinomial") || lower.starts_with("negbinomial") || lower.starts_with("negbin") {
+    if lower.starts_with("negativebinomial")
+        || lower.starts_with("negbinomial")
+        || lower.starts_with("negbin")
+    {
         let theta = if let Some(start) = lower.find("theta=") {
             let rest = &lower[start + 6..];
             let end = rest.find(')').unwrap_or(rest.len());
@@ -733,7 +751,7 @@ fn compute_variance(mu: &Array1<f64>, family: &str) -> Array1<f64> {
         };
         return mu.iter().map(|&m| m + m * m / theta).collect();
     }
-    
+
     match lower.as_str() {
         "gaussian" | "normal" => Array1::ones(mu.len()),
         "poisson" | "quasipoisson" => mu.clone(),
@@ -746,7 +764,7 @@ fn compute_variance(mu: &Array1<f64>, family: &str) -> Array1<f64> {
 /// Invert a small matrix and compute quadratic form u' A^-1 u
 fn invert_and_quadratic(a: &Array2<f64>, u: &Array1<f64>) -> Option<f64> {
     let k = a.nrows();
-    
+
     if k == 1 {
         // Simple case
         if a[[0, 0]].abs() < 1e-10 {
@@ -754,12 +772,12 @@ fn invert_and_quadratic(a: &Array2<f64>, u: &Array1<f64>) -> Option<f64> {
         }
         return Some(u[0] * u[0] / a[[0, 0]]);
     }
-    
+
     // Use Cholesky decomposition for small symmetric positive definite matrix
     // For simplicity, use LU decomposition via Gaussian elimination
     let mut work = a.clone();
     let mut pivot = vec![0usize; k];
-    
+
     // LU decomposition with partial pivoting
     for i in 0..k {
         // Find pivot
@@ -771,13 +789,13 @@ fn invert_and_quadratic(a: &Array2<f64>, u: &Array1<f64>) -> Option<f64> {
                 max_row = r;
             }
         }
-        
+
         if max_val < 1e-12 {
             return None; // Singular
         }
-        
+
         pivot[i] = max_row;
-        
+
         // Swap rows
         if max_row != i {
             for j in 0..k {
@@ -786,7 +804,7 @@ fn invert_and_quadratic(a: &Array2<f64>, u: &Array1<f64>) -> Option<f64> {
                 work[[max_row, j]] = tmp;
             }
         }
-        
+
         // Eliminate
         for r in (i + 1)..k {
             let factor = work[[r, i]] / work[[i, i]];
@@ -796,7 +814,7 @@ fn invert_and_quadratic(a: &Array2<f64>, u: &Array1<f64>) -> Option<f64> {
             }
         }
     }
-    
+
     // Solve L*y = P*u
     let mut y = u.clone();
     for i in 0..k {
@@ -810,7 +828,7 @@ fn invert_and_quadratic(a: &Array2<f64>, u: &Array1<f64>) -> Option<f64> {
             y[i] -= work[[i, j]] * y[j];
         }
     }
-    
+
     // Solve U*x = y
     let mut x = y;
     for i in (0..k).rev() {
@@ -822,7 +840,7 @@ fn invert_and_quadratic(a: &Array2<f64>, u: &Array1<f64>) -> Option<f64> {
         }
         x[i] /= work[[i, i]];
     }
-    
+
     // Quadratic form: u' * x = u' * A^-1 * u
     let result: f64 = u.iter().zip(x.iter()).map(|(&ui, &xi)| ui * xi).sum();
     Some(result.max(0.0))
@@ -857,7 +875,7 @@ mod tests {
         // Large z should give small p
         let p = pvalue_z(3.0);
         assert!(p < 0.01);
-        
+
         let p = pvalue_z(5.0);
         assert!(p < 0.0001);
     }
@@ -889,7 +907,7 @@ mod tests {
     fn test_confidence_interval_95() {
         // 95% CI with z-distribution
         let (lower, upper) = confidence_interval_z(1.0, 0.5, 0.95);
-        
+
         // Should be approximately 1.0 ± 1.96 * 0.5
         assert_abs_diff_eq!(lower, 1.0 - 1.96 * 0.5, epsilon = 0.01);
         assert_abs_diff_eq!(upper, 1.0 + 1.96 * 0.5, epsilon = 0.01);
@@ -898,7 +916,7 @@ mod tests {
     #[test]
     fn test_confidence_interval_symmetric() {
         let (lower, upper) = confidence_interval_z(0.0, 1.0, 0.95);
-        
+
         // CI around 0 should be symmetric
         assert_abs_diff_eq!(-lower, upper, epsilon = 1e-10);
     }
@@ -924,29 +942,29 @@ mod tests {
     #[test]
     fn test_robust_covariance_basic() {
         use ndarray::{arr1, arr2};
-        
+
         // Simple 3-observation, 2-parameter case
-        let x = arr2(&[
-            [1.0, 1.0],
-            [1.0, 2.0],
-            [1.0, 3.0],
-        ]);
+        let x = arr2(&[[1.0, 1.0], [1.0, 2.0], [1.0, 3.0]]);
         let pearson_resid = arr1(&[0.1, -0.2, 0.15]);
         let irls_weights = arr1(&[1.0, 1.0, 1.0]);
         let prior_weights = arr1(&[1.0, 1.0, 1.0]);
-        
+
         // Create a simple bread matrix (identity for testing)
-        let bread = arr2(&[
-            [0.5, 0.0],
-            [0.0, 0.5],
-        ]);
-        
+        let bread = arr2(&[[0.5, 0.0], [0.0, 0.5]]);
+
         // HC0 should produce a valid covariance matrix
-        let cov = robust_covariance(&x, &pearson_resid, &irls_weights, &prior_weights, &bread, HCType::HC0);
-        
+        let cov = robust_covariance(
+            &x,
+            &pearson_resid,
+            &irls_weights,
+            &prior_weights,
+            &bread,
+            HCType::HC0,
+        );
+
         // Should be symmetric
         assert_abs_diff_eq!(cov[[0, 1]], cov[[1, 0]], epsilon = 1e-10);
-        
+
         // Diagonal should be non-negative
         assert!(cov[[0, 0]] >= 0.0);
         assert!(cov[[1, 1]] >= 0.0);
@@ -955,15 +973,12 @@ mod tests {
     #[test]
     fn test_robust_standard_errors() {
         use ndarray::arr2;
-        
+
         // Positive definite covariance matrix
-        let cov = arr2(&[
-            [0.04, 0.01],
-            [0.01, 0.09],
-        ]);
-        
+        let cov = arr2(&[[0.04, 0.01], [0.01, 0.09]]);
+
         let se = robust_standard_errors(&cov);
-        
+
         assert_abs_diff_eq!(se[0], 0.2, epsilon = 1e-10);
         assert_abs_diff_eq!(se[1], 0.3, epsilon = 1e-10);
     }
@@ -971,34 +986,44 @@ mod tests {
     #[test]
     fn test_hc1_larger_than_hc0() {
         use ndarray::{arr1, arr2};
-        
+
         // HC1 should give larger standard errors than HC0 due to n/(n-p) correction
-        let x = arr2(&[
-            [1.0, 1.0],
-            [1.0, 2.0],
-            [1.0, 3.0],
-            [1.0, 4.0],
-        ]);
+        let x = arr2(&[[1.0, 1.0], [1.0, 2.0], [1.0, 3.0], [1.0, 4.0]]);
         let pearson_resid = arr1(&[0.1, -0.2, 0.15, -0.1]);
         let irls_weights = arr1(&[1.0, 1.0, 1.0, 1.0]);
         let prior_weights = arr1(&[1.0, 1.0, 1.0, 1.0]);
-        let bread = arr2(&[
-            [0.5, 0.0],
-            [0.0, 0.5],
-        ]);
-        
-        let cov_hc0 = robust_covariance(&x, &pearson_resid, &irls_weights, &prior_weights, &bread, HCType::HC0);
-        let cov_hc1 = robust_covariance(&x, &pearson_resid, &irls_weights, &prior_weights, &bread, HCType::HC1);
-        
+        let bread = arr2(&[[0.5, 0.0], [0.0, 0.5]]);
+
+        let cov_hc0 = robust_covariance(
+            &x,
+            &pearson_resid,
+            &irls_weights,
+            &prior_weights,
+            &bread,
+            HCType::HC0,
+        );
+        let cov_hc1 = robust_covariance(
+            &x,
+            &pearson_resid,
+            &irls_weights,
+            &prior_weights,
+            &bread,
+            HCType::HC1,
+        );
+
         // HC1 should be larger by factor of n/(n-p) = 4/2 = 2
         let expected_ratio = 4.0 / 2.0;
-        assert_abs_diff_eq!(cov_hc1[[0, 0]] / cov_hc0[[0, 0]], expected_ratio, epsilon = 1e-10);
+        assert_abs_diff_eq!(
+            cov_hc1[[0, 0]] / cov_hc0[[0, 0]],
+            expected_ratio,
+            epsilon = 1e-10
+        );
     }
 
     #[test]
     fn test_score_test_continuous_basic() {
         use ndarray::{arr1, arr2};
-        
+
         // Simple case: test if adding a variable correlated with residuals is significant
         let n = 100;
         let x = Array2::from_shape_fn((n, 2), |(i, j)| if j == 0 { 1.0 } else { i as f64 / 10.0 });
@@ -1006,12 +1031,12 @@ mod tests {
         let mu: Array1<f64> = (0..n).map(|i| (i as f64 / 10.0) + 0.3).collect(); // Slightly off
         let weights = Array1::ones(n);
         let bread = arr2(&[[0.1, 0.0], [0.0, 0.1]]);
-        
+
         // New variable that explains residuals
         let z: Array1<f64> = (0..n).map(|i| (i as f64).sin()).collect();
-        
+
         let result = score_test_continuous(&z, &x, &y, &mu, &weights, &bread, "gaussian");
-        
+
         // Should produce a valid result
         assert!(result.statistic >= 0.0);
         assert_eq!(result.df, 1);
@@ -1021,7 +1046,7 @@ mod tests {
     #[test]
     fn test_score_test_continuous_null_variable() {
         use ndarray::{arr1, arr2};
-        
+
         // Test with a variable that has no relationship to residuals
         let n = 50;
         let x = Array2::from_shape_fn((n, 2), |(i, j)| if j == 0 { 1.0 } else { i as f64 });
@@ -1029,12 +1054,12 @@ mod tests {
         let mu = y.clone(); // Perfect fit - no residuals
         let weights = Array1::ones(n);
         let bread = arr2(&[[0.5, 0.0], [0.0, 0.01]]);
-        
+
         // Random variable unrelated to (zero) residuals
         let z = Array1::ones(n);
-        
+
         let result = score_test_continuous(&z, &x, &y, &mu, &weights, &bread, "gaussian");
-        
+
         // With zero residuals, score should be 0
         assert_abs_diff_eq!(result.statistic, 0.0, epsilon = 1e-6);
         assert_abs_diff_eq!(result.pvalue, 1.0, epsilon = 0.01);
@@ -1044,15 +1069,25 @@ mod tests {
     #[test]
     fn test_score_test_categorical_basic() {
         use ndarray::arr2;
-        
+
         // Test categorical score test
         let n = 60;
         let x = Array2::from_shape_fn((n, 1), |_| 1.0); // Intercept only
-        let y: Array1<f64> = (0..n).map(|i| if i < 20 { 1.0 } else if i < 40 { 2.0 } else { 3.0 }).collect();
+        let y: Array1<f64> = (0..n)
+            .map(|i| {
+                if i < 20 {
+                    1.0
+                } else if i < 40 {
+                    2.0
+                } else {
+                    3.0
+                }
+            })
+            .collect();
         let mu = Array1::from_elem(n, 2.0); // Mean prediction
         let weights = Array1::ones(n);
         let bread = arr2(&[[1.0 / n as f64]]);
-        
+
         // Dummy matrix for 3-level categorical (2 columns after base exclusion)
         let mut z_matrix = Array2::zeros((n, 2));
         for i in 20..40 {
@@ -1061,9 +1096,9 @@ mod tests {
         for i in 40..n {
             z_matrix[[i, 1]] = 1.0; // Level 3
         }
-        
+
         let result = score_test_categorical(&z_matrix, &x, &y, &mu, &weights, &bread, "gaussian");
-        
+
         assert!(result.statistic >= 0.0);
         assert_eq!(result.df, 2);
         assert!(result.pvalue >= 0.0 && result.pvalue <= 1.0);
@@ -1074,7 +1109,7 @@ mod tests {
     #[test]
     fn test_score_test_empty_categorical() {
         use ndarray::arr2;
-        
+
         // Test with empty categorical (0 columns)
         let n = 10;
         let x = Array2::from_shape_fn((n, 1), |_| 1.0);
@@ -1083,9 +1118,9 @@ mod tests {
         let weights = Array1::ones(n);
         let bread = arr2(&[[0.1]]);
         let z_matrix = Array2::zeros((n, 0));
-        
+
         let result = score_test_categorical(&z_matrix, &x, &y, &mu, &weights, &bread, "gaussian");
-        
+
         assert_eq!(result.df, 0);
         assert_abs_diff_eq!(result.pvalue, 1.0, epsilon = 1e-10);
     }

@@ -29,6 +29,8 @@
 // Declare our modules - each is in its own file or folder
 pub mod constants;
 pub mod convert;
+pub mod design_matrix;
+pub mod diagnostics;
 pub mod error;
 pub mod families;
 pub mod inference;
@@ -36,31 +38,30 @@ pub mod interactions;
 pub mod links;
 pub mod regularization;
 pub mod solvers;
-pub mod diagnostics;
 pub mod splines;
-pub mod design_matrix;
 pub mod target_encoding;
 
 // Re-export commonly used items at the top level for convenience
 // Users can write `use rustystats_core::GaussianFamily` instead of
 // `use rustystats_core::families::gaussian::GaussianFamily`
-pub use error::{RustyStatsError, Result};
+pub use design_matrix::{
+    build_categorical_categorical_interaction, build_categorical_continuous_interaction,
+    build_continuous_continuous_interaction, build_design_matrix, encode_categorical,
+    encode_categorical_from_indices, multiply_matrix_by_continuous, CategoricalEncoding,
+    DesignColumn,
+};
+pub use error::{Result, RustyStatsError};
 pub use families::Family;
 pub use inference::{
-    pvalue_z, pvalue_t, confidence_interval_z, confidence_interval_t,
-    HCType, robust_covariance, robust_standard_errors,
-    ScoreTestResult, score_test_continuous, score_test_categorical,
+    confidence_interval_t, confidence_interval_z, pvalue_t, pvalue_z, robust_covariance,
+    robust_standard_errors, score_test_categorical, score_test_continuous, HCType, ScoreTestResult,
 };
 pub use links::Link;
-pub use regularization::{Penalty, RegularizationConfig, soft_threshold};
-pub use solvers::{FitConfig, fit_glm_unified, IRLSConfig, IRLSResult};
-pub use splines::{bs, ns, bs_basis, ns_basis, bs_with_knots, bs_names, ns_names, compute_knots, DEFAULT_DEGREE};
-pub use design_matrix::{
-    encode_categorical, encode_categorical_from_indices,
-    build_categorical_categorical_interaction, build_categorical_continuous_interaction,
-    build_continuous_continuous_interaction, multiply_matrix_by_continuous,
-    build_design_matrix, CategoricalEncoding, DesignColumn,
+pub use regularization::{soft_threshold, Penalty, RegularizationConfig};
+pub use solvers::{fit_glm_unified, FitConfig, IRLSConfig, IRLSResult};
+pub use splines::{
+    bs, bs_basis, bs_names, bs_with_knots, compute_knots, ns, ns_basis, ns_names, DEFAULT_DEGREE,
 };
 pub use target_encoding::{
-    target_encode, apply_target_encoding, TargetEncoding, TargetEncodingConfig, LevelStatistics,
+    apply_target_encoding, target_encode, LevelStatistics, TargetEncoding, TargetEncodingConfig,
 };

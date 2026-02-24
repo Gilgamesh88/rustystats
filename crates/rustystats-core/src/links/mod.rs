@@ -47,7 +47,7 @@ pub use logit::LogitLink;
 // =============================================================================
 // The Link Trait
 // =============================================================================
-// 
+//
 // This defines what every link function must be able to do.
 // In Rust, a "trait" is like an interface - it specifies a contract that
 // types must fulfill.
@@ -56,12 +56,12 @@ pub use logit::LogitLink;
 // =============================================================================
 
 /// The Link trait defines the interface for all link functions.
-/// 
+///
 /// # Example
 /// ```
 /// use rustystats_core::links::{Link, IdentityLink};
 /// use ndarray::array;
-/// 
+///
 /// let link = IdentityLink;
 /// let mu = array![1.0, 2.0, 3.0];
 /// let eta = link.link(&mu);  // For identity: eta = mu
@@ -69,37 +69,37 @@ pub use logit::LogitLink;
 pub trait Link: Send + Sync {
     /// Returns the name of this link function (for display purposes).
     fn name(&self) -> &str;
-    
+
     /// Apply the link function: η = g(μ)
-    /// 
+    ///
     /// Transforms the mean (μ) to the linear predictor scale (η).
-    /// 
+    ///
     /// # Arguments
     /// * `mu` - Array of mean values
-    /// 
+    ///
     /// # Returns
     /// Array of linear predictor values
     fn link(&self, mu: &Array1<f64>) -> Array1<f64>;
-    
+
     /// Apply the inverse link function: μ = g⁻¹(η)
-    /// 
+    ///
     /// Transforms the linear predictor (η) back to the mean scale (μ).
     /// This is used to get predicted values from the model.
-    /// 
+    ///
     /// # Arguments
     /// * `eta` - Array of linear predictor values
-    /// 
+    ///
     /// # Returns
     /// Array of mean values
     fn inverse(&self, eta: &Array1<f64>) -> Array1<f64>;
-    
+
     /// Compute the derivative of the link function: dη/dμ
-    /// 
+    ///
     /// This is needed by the IRLS algorithm to compute working weights.
-    /// 
+    ///
     /// # Arguments
     /// * `mu` - Array of mean values
-    /// 
+    ///
     /// # Returns
     /// Array of derivative values at each point
     fn derivative(&self, mu: &Array1<f64>) -> Array1<f64>;

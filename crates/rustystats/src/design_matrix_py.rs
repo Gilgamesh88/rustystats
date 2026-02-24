@@ -5,8 +5,8 @@
 // Fast categorical encoding and interaction construction in Rust.
 // =============================================================================
 
-use pyo3::prelude::*;
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2};
+use pyo3::prelude::*;
 
 use rustystats_core::design_matrix;
 
@@ -32,7 +32,12 @@ pub fn encode_categorical_py<'py>(
     values: Vec<String>,
     var_name: &str,
     drop_first: bool,
-) -> PyResult<(Bound<'py, PyArray2<f64>>, Vec<String>, Vec<i32>, Vec<String>)> {
+) -> PyResult<(
+    Bound<'py, PyArray2<f64>>,
+    Vec<String>,
+    Vec<i32>,
+    Vec<String>,
+)> {
     let enc = design_matrix::encode_categorical(&values, var_name, drop_first);
     Ok((
         enc.matrix.into_pyarray_bound(py),
@@ -97,7 +102,11 @@ pub fn encode_categorical_indices_py<'py>(
 ) -> PyResult<(Bound<'py, PyArray2<f64>>, Vec<String>)> {
     let indices_vec: Vec<i32> = indices.as_array().to_vec();
     let enc = design_matrix::encode_categorical_from_indices(
-        &indices_vec, n_levels, &level_names, var_name, drop_first
+        &indices_vec,
+        n_levels,
+        &level_names,
+        var_name,
+        drop_first,
     );
     Ok((enc.matrix.into_pyarray_bound(py), enc.names))
 }
@@ -136,7 +145,7 @@ pub fn build_cat_cat_interaction_py<'py>(
     let idx1_vec: Vec<i32> = idx1.as_array().to_vec();
     let idx2_vec: Vec<i32> = idx2.as_array().to_vec();
     let (matrix, names) = design_matrix::build_categorical_categorical_interaction(
-        &idx1_vec, n_levels1, &idx2_vec, n_levels2, &names1, &names2
+        &idx1_vec, n_levels1, &idx2_vec, n_levels2, &names1, &names2,
     );
     Ok((matrix.into_pyarray_bound(py), names))
 }
@@ -172,7 +181,11 @@ pub fn build_cat_cont_interaction_py<'py>(
     let idx_vec: Vec<i32> = cat_indices.as_array().to_vec();
     let cont_array = continuous.as_array().to_owned();
     let (matrix, names) = design_matrix::build_categorical_continuous_interaction(
-        &idx_vec, n_levels, &cont_array, &cat_names, cont_name
+        &idx_vec,
+        n_levels,
+        &cont_array,
+        &cat_names,
+        cont_name,
     );
     Ok((matrix.into_pyarray_bound(py), names))
 }
@@ -190,9 +203,8 @@ pub fn build_cont_cont_interaction_py<'py>(
 ) -> PyResult<(Bound<'py, PyArray1<f64>>, String)> {
     let x1_array = x1.as_array().to_owned();
     let x2_array = x2.as_array().to_owned();
-    let (result, name) = design_matrix::build_continuous_continuous_interaction(
-        &x1_array, &x2_array, name1, name2
-    );
+    let (result, name) =
+        design_matrix::build_continuous_continuous_interaction(&x1_array, &x2_array, name1, name2);
     Ok((result.into_pyarray_bound(py), name))
 }
 
@@ -210,7 +222,10 @@ pub fn multiply_matrix_by_continuous_py<'py>(
     let matrix_array = matrix.as_array().to_owned();
     let cont_array = continuous.as_array().to_owned();
     let (result, names) = design_matrix::multiply_matrix_by_continuous(
-        &matrix_array, &cont_array, &matrix_names, cont_name
+        &matrix_array,
+        &cont_array,
+        &matrix_names,
+        cont_name,
     );
     Ok((result.into_pyarray_bound(py), names))
 }

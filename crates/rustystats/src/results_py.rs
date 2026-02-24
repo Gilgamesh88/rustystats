@@ -6,17 +6,18 @@
 // It provides access to coefficients, fitted values, and diagnostic info.
 // =============================================================================
 
-use pyo3::prelude::*;
-use pyo3::exceptions::PyValueError;
-use numpy::{IntoPyArray, PyArray1, PyArray2};
 use ndarray::{Array1, Array2};
+use numpy::{IntoPyArray, PyArray1, PyArray2};
+use pyo3::exceptions::PyValueError;
+use pyo3::prelude::*;
 
-use rustystats_core::families::Family;
-use rustystats_core::inference::{pvalue_z, confidence_interval_z, HCType, robust_covariance, robust_standard_errors};
 use rustystats_core::diagnostics::{
-    resid_response, resid_pearson, resid_deviance, resid_working,
-    estimate_dispersion_pearson, pearson_chi2,
-    aic, bic, null_deviance_for_family,
+    aic, bic, estimate_dispersion_pearson, null_deviance_for_family, pearson_chi2, resid_deviance,
+    resid_pearson, resid_response, resid_working,
+};
+use rustystats_core::families::Family;
+use rustystats_core::inference::{
+    confidence_interval_z, pvalue_z, robust_covariance, robust_standard_errors, HCType,
 };
 use rustystats_core::regularization::Penalty;
 
@@ -76,17 +77,21 @@ impl PyGLMResults {
         family_from_name(&self.family_name, 1.5, 1.0)
             .expect("Invalid family name stored in results - this is a bug")
     }
-    
+
     /// Get prior weights as Option, returning None if all weights are 1.0.
     /// Many functions accept Option<&Array1<f64>> for weights.
     fn maybe_weights(&self) -> Option<&Array1<f64>> {
-        if self.prior_weights.iter().all(|&w| (w - 1.0).abs() < rustystats_core::constants::ZERO_TOL) {
+        if self
+            .prior_weights
+            .iter()
+            .all(|&w| (w - 1.0).abs() < rustystats_core::constants::ZERO_TOL)
+        {
             None
         } else {
             Some(&self.prior_weights)
         }
     }
-    
+
     /// Compute robust covariance matrix (internal helper).
     /// Factored out to avoid repeating the same logic in cov_robust, bse_robust, etc.
     /// Returns Err if design_matrix was not stored (lean mode).
@@ -95,12 +100,12 @@ impl PyGLMResults {
             PyValueError::new_err(
                 "Design matrix not stored (lean mode). Robust standard errors require \
                  store_design_matrix=True when fitting, or pass the design matrix via \
-                 the Python diagnostics API."
+                 the Python diagnostics API.",
             )
         })?;
         let family = self.get_family();
         let pearson_resid = resid_pearson(&self.y, &self.fitted_values, family.as_ref());
-        
+
         Ok(robust_covariance(
             dm,
             &pearson_resid,
@@ -199,7 +204,9 @@ impl PyGLMResults {
     /// This is useful for computing score tests for unfitted factors.
     #[getter]
     fn get_design_matrix<'py>(&self, py: Python<'py>) -> Option<Bound<'py, PyArray2<f64>>> {
-        self.design_matrix.as_ref().map(|dm| dm.clone().into_pyarray_bound(py))
+        self.design_matrix
+            .as_ref()
+            .map(|dm| dm.clone().into_pyarray_bound(py))
     }
 
     /// Get the IRLS working weights from the final iteration.
@@ -321,7 +328,7 @@ impl PyGLMResults {
     fn conf_int<'py>(&self, py: Python<'py>, alpha: f64) -> Bound<'py, PyArray2<f64>> {
         let scale = self.scale();
         let confidence = 1.0 - alpha;
-        
+
         let mut ci = Array2::zeros((self.n_params, 2));
         for i in 0..self.n_params {
             let se = (scale * self.covariance_unscaled[[i, i]]).sqrt();
@@ -389,13 +396,18 @@ impl PyGLMResults {
     /// numpy.ndarray
     ///     Robust covariance matrix (p × p)
     #[pyo3(signature = (cov_type="HC1"))]
-    fn cov_robust<'py>(&self, py: Python<'py>, cov_type: &str) -> PyResult<Bound<'py, PyArray2<f64>>> {
+    fn cov_robust<'py>(
+        &self,
+        py: Python<'py>,
+        cov_type: &str,
+    ) -> PyResult<Bound<'py, PyArray2<f64>>> {
         let hc_type = HCType::from_str(cov_type).ok_or_else(|| {
             PyValueError::new_err(format!(
-                "Unknown cov_type '{}'. Use 'HC0', 'HC1', 'HC2', or 'HC3'.", cov_type
+                "Unknown cov_type '{}'. Use 'HC0', 'HC1', 'HC2', or 'HC3'.",
+                cov_type
             ))
         })?;
-        
+
         let cov = self.compute_robust_cov(hc_type)?;
         Ok(cov.into_pyarray_bound(py))
     }
@@ -434,13 +446,18 @@ impl PyGLMResults {
     /// >>> se_model = result.bse()       # Model-based SE
     /// >>> se_robust = result.bse_robust("HC1")  # Robust SE
     #[pyo3(signature = (cov_type="HC1"))]
-    fn bse_robust<'py>(&self, py: Python<'py>, cov_type: &str) -> PyResult<Bound<'py, PyArray1<f64>>> {
+    fn bse_robust<'py>(
+        &self,
+        py: Python<'py>,
+        cov_type: &str,
+    ) -> PyResult<Bound<'py, PyArray1<f64>>> {
         let hc_type = HCType::from_str(cov_type).ok_or_else(|| {
             PyValueError::new_err(format!(
-                "Unknown cov_type '{}'. Use 'HC0', 'HC1', 'HC2', or 'HC3'.", cov_type
+                "Unknown cov_type '{}'. Use 'HC0', 'HC1', 'HC2', or 'HC3'.",
+                cov_type
             ))
         })?;
-        
+
         let cov = self.compute_robust_cov(hc_type)?;
         let se = robust_standard_errors(&cov);
         Ok(se.into_pyarray_bound(py))
@@ -458,20 +475,27 @@ impl PyGLMResults {
     /// numpy.ndarray
     ///     Array of t/z statistics (coefficient / robust SE).
     #[pyo3(signature = (cov_type="HC1"))]
-    fn tvalues_robust<'py>(&self, py: Python<'py>, cov_type: &str) -> PyResult<Bound<'py, PyArray1<f64>>> {
+    fn tvalues_robust<'py>(
+        &self,
+        py: Python<'py>,
+        cov_type: &str,
+    ) -> PyResult<Bound<'py, PyArray1<f64>>> {
         let hc_type = HCType::from_str(cov_type).ok_or_else(|| {
             PyValueError::new_err(format!(
-                "Unknown cov_type '{}'. Use 'HC0', 'HC1', 'HC2', or 'HC3'.", cov_type
+                "Unknown cov_type '{}'. Use 'HC0', 'HC1', 'HC2', or 'HC3'.",
+                cov_type
             ))
         })?;
-        
+
         let cov = self.compute_robust_cov(hc_type)?;
         let se = robust_standard_errors(&cov);
-        let t: Array1<f64> = self.coefficients.iter()
+        let t: Array1<f64> = self
+            .coefficients
+            .iter()
             .zip(se.iter())
             .map(|(&c, &s)| if s > 1e-10 { c / s } else { 0.0 })
             .collect();
-        
+
         Ok(t.into_pyarray_bound(py))
     }
 
@@ -487,16 +511,23 @@ impl PyGLMResults {
     /// numpy.ndarray
     ///     Array of p-values.
     #[pyo3(signature = (cov_type="HC1"))]
-    fn pvalues_robust<'py>(&self, py: Python<'py>, cov_type: &str) -> PyResult<Bound<'py, PyArray1<f64>>> {
+    fn pvalues_robust<'py>(
+        &self,
+        py: Python<'py>,
+        cov_type: &str,
+    ) -> PyResult<Bound<'py, PyArray1<f64>>> {
         let hc_type = HCType::from_str(cov_type).ok_or_else(|| {
             PyValueError::new_err(format!(
-                "Unknown cov_type '{}'. Use 'HC0', 'HC1', 'HC2', or 'HC3'.", cov_type
+                "Unknown cov_type '{}'. Use 'HC0', 'HC1', 'HC2', or 'HC3'.",
+                cov_type
             ))
         })?;
-        
+
         let cov = self.compute_robust_cov(hc_type)?;
         let se = robust_standard_errors(&cov);
-        let pvals: Array1<f64> = self.coefficients.iter()
+        let pvals: Array1<f64> = self
+            .coefficients
+            .iter()
             .zip(se.iter())
             .map(|(&c, &s)| {
                 if s > 1e-10 {
@@ -507,7 +538,7 @@ impl PyGLMResults {
                 }
             })
             .collect();
-        
+
         Ok(pvals.into_pyarray_bound(py))
     }
 
@@ -525,24 +556,30 @@ impl PyGLMResults {
     /// numpy.ndarray
     ///     2D array of shape (n_params, 2) with [lower, upper] bounds.
     #[pyo3(signature = (alpha=0.05, cov_type="HC1"))]
-    fn conf_int_robust<'py>(&self, py: Python<'py>, alpha: f64, cov_type: &str) -> PyResult<Bound<'py, PyArray2<f64>>> {
+    fn conf_int_robust<'py>(
+        &self,
+        py: Python<'py>,
+        alpha: f64,
+        cov_type: &str,
+    ) -> PyResult<Bound<'py, PyArray2<f64>>> {
         let hc_type = HCType::from_str(cov_type).ok_or_else(|| {
             PyValueError::new_err(format!(
-                "Unknown cov_type '{}'. Use 'HC0', 'HC1', 'HC2', or 'HC3'.", cov_type
+                "Unknown cov_type '{}'. Use 'HC0', 'HC1', 'HC2', or 'HC3'.",
+                cov_type
             ))
         })?;
-        
+
         let cov = self.compute_robust_cov(hc_type)?;
         let se = robust_standard_errors(&cov);
         let confidence = 1.0 - alpha;
-        
+
         let mut ci = Array2::zeros((self.n_params, 2));
         for (i, (&coef, &se_i)) in self.coefficients.iter().zip(se.iter()).enumerate() {
             let (lower, upper) = confidence_interval_z(coef, se_i, confidence);
             ci[[i, 0]] = lower;
             ci[[i, 1]] = upper;
         }
-        
+
         Ok(ci.into_pyarray_bound(py))
     }
 
@@ -603,7 +640,12 @@ impl PyGLMResults {
     /// X² should be approximately chi-squared with (n-p) df.
     fn pearson_chi2(&self) -> f64 {
         let family = self.get_family();
-        pearson_chi2(&self.y, &self.fitted_values, family.as_ref(), self.maybe_weights())
+        pearson_chi2(
+            &self.y,
+            &self.fitted_values,
+            family.as_ref(),
+            self.maybe_weights(),
+        )
     }
 
     /// Get dispersion estimated from Pearson residuals.
@@ -612,9 +654,9 @@ impl PyGLMResults {
     fn scale_pearson(&self) -> f64 {
         let family = self.get_family();
         estimate_dispersion_pearson(
-            &self.y, 
-            &self.fitted_values, 
-            family.as_ref(), 
+            &self.y,
+            &self.fitted_values,
+            family.as_ref(),
             self.df_resid(),
             self.maybe_weights(),
         )
@@ -660,7 +702,12 @@ impl PyGLMResults {
     /// Accounts for offset if present (e.g., exposure in count models).
     fn null_deviance(&self) -> f64 {
         let family = self.get_family();
-        null_deviance_for_family(&self.y, family.as_ref(), self.maybe_weights(), self.offset.as_ref())
+        null_deviance_for_family(
+            &self.y,
+            family.as_ref(),
+            self.maybe_weights(),
+            self.offset.as_ref(),
+        )
     }
 
     /// Get the family name.
@@ -694,7 +741,7 @@ impl PyGLMResults {
             Penalty::Ridge(_) => Some(0.0),
             Penalty::Lasso(_) => Some(1.0),
             Penalty::ElasticNet { l1_ratio, .. } => Some(*l1_ratio),
-            Penalty::Smooth(_) => None,  // Smooth penalties don't have L1 ratio
+            Penalty::Smooth(_) => None, // Smooth penalties don't have L1 ratio
         }
     }
 
@@ -723,7 +770,11 @@ impl PyGLMResults {
     /// Useful for Lasso/Elastic Net to see how many variables were selected.
     /// Excludes the intercept (first coefficient) from the count.
     fn n_nonzero(&self) -> usize {
-        self.coefficients.iter().skip(1).filter(|&&c| c.abs() > 1e-10).count()
+        self.coefficients
+            .iter()
+            .skip(1)
+            .filter(|&&c| c.abs() > 1e-10)
+            .count()
     }
 
     /// Get indices of non-zero coefficients (selected variables).
@@ -733,7 +784,7 @@ impl PyGLMResults {
         self.coefficients
             .iter()
             .enumerate()
-            .skip(1)  // Skip intercept
+            .skip(1) // Skip intercept
             .filter(|(_, &c)| c.abs() > 1e-10)
             .map(|(i, _)| i)
             .collect()

@@ -24,62 +24,17 @@ Usage:
 """
 
 # Import from types module (extracted dataclasses)
-from rustystats.diagnostics.types import (
-    # Utility functions
-    _json_default,
-    _round_float,
-    _to_dict_recursive,
-    _extract_base_variable,
-    # Basic types
-    Percentiles,
-    ResidualSummary,
-    CalibrationBin,
-    LorenzPoint,
-    ActualExpectedBin,
-    ResidualPattern,
-    # Factor statistics
-    ContinuousFactorStats,
-    CategoricalLevelStats,
-    CategoricalFactorStats,
-    FactorSignificance,
-    ScoreTestResult,
-    FactorCoefficient,
-    FactorDiagnostics,
-    # Interaction and VIF
-    InteractionCandidate,
-    VIFResult,
-    # Coefficient and deviance
-    CoefficientSummary,
-    DevianceByLevel,
-    FactorDeviance,
-    # Lift and calibration
-    LiftDecile,
-    LiftChart,
-    PartialDependence,
-    DecileMetrics,
-    FactorLevelMetrics,
-    ContinuousBandMetrics,
-    # Dataset diagnostics
-    DatasetDiagnostics,
-    TrainTestComparison,
-    ConvergenceDetails,
-    # Smooth terms
-    SmoothTermDiagnostics,
-    # Base predictions
-    ModelVsBaseDecile,
-    BasePredictionsMetrics,
-    BasePredictionsComparison,
-    # Data exploration
-    DataExploration,
-    # Main output
-    ModelDiagnostics,
+# Import top-level API functions
+from rustystats.diagnostics.api import (  # noqa: F401
+    _compute_smooth_term_diagnostics,
+    compute_diagnostics,
 )
 
 # Import computation components
 from rustystats.diagnostics.components import (
-    _ResidualComputer,
-    _CalibrationComputer,
-    _DiscriminationComputer,
+    _CalibrationComputer,  # noqa: F401
+    _DiscriminationComputer,  # noqa: F401
+    _ResidualComputer,  # noqa: F401
 )
 
 # Import main computation orchestrator
@@ -87,9 +42,56 @@ from rustystats.diagnostics.computer import DiagnosticsComputer
 
 # Import pre-fit data exploration
 from rustystats.diagnostics.explorer import DataExplorer, explore_data
-
-# Import top-level API functions
-from rustystats.diagnostics.api import compute_diagnostics, _compute_smooth_term_diagnostics
+from rustystats.diagnostics.types import (
+    ActualExpectedBin,
+    BasePredictionsComparison,
+    BasePredictionsMetrics,
+    CalibrationBin,
+    CategoricalFactorStats,
+    CategoricalLevelStats,
+    # Coefficient and deviance
+    CoefficientSummary,
+    ContinuousBandMetrics,
+    # Factor statistics
+    ContinuousFactorStats,
+    ConvergenceDetails,
+    # Data exploration
+    DataExploration,
+    # Dataset diagnostics
+    DatasetDiagnostics,
+    DecileMetrics,
+    DevianceByLevel,
+    FactorCoefficient,
+    FactorDeviance,
+    FactorDiagnostics,
+    FactorLevelMetrics,
+    FactorSignificance,
+    # Interaction and VIF
+    InteractionCandidate,
+    LiftChart,
+    # Lift and calibration
+    LiftDecile,
+    LorenzPoint,
+    # Main output
+    ModelDiagnostics,
+    # Base predictions
+    ModelVsBaseDecile,
+    PartialDependence,
+    # Basic types
+    Percentiles,
+    ResidualPattern,
+    ResidualSummary,
+    ScoreTestResult,
+    # Smooth terms
+    SmoothTermDiagnostics,
+    TrainTestComparison,
+    VIFResult,
+    _extract_base_variable,  # noqa: F401
+    # Utility functions
+    _json_default,  # noqa: F401
+    _round_float,  # noqa: F401
+    _to_dict_recursive,  # noqa: F401
+)
 
 __all__ = [
     # Types

@@ -33,9 +33,9 @@
 //
 // =============================================================================
 
+use crate::constants::{MU_MAX_PROBABILITY, MU_MIN_POSITIVE, MU_MIN_PROBABILITY};
 use ndarray::Array1;
 use std::f64::consts::PI;
-use crate::constants::{MU_MIN_PROBABILITY, MU_MAX_PROBABILITY, MU_MIN_POSITIVE};
 
 // =============================================================================
 // Log-Likelihood Functions
@@ -61,29 +61,25 @@ pub fn log_likelihood_gaussian(
 ) -> f64 {
     let n = y.len() as f64;
     let sum_wt = weights.map_or(n, |w| w.sum());
-    
+
     // Sum of squared residuals
-    let ss: f64 = ndarray::Zip::from(y)
-        .and(mu)
-        .fold(0.0, |acc, &yi, &mui| {
-            let diff = yi - mui;
-            acc + diff * diff
-        });
-    
+    let ss: f64 = ndarray::Zip::from(y).and(mu).fold(0.0, |acc, &yi, &mui| {
+        let diff = yi - mui;
+        acc + diff * diff
+    });
+
     // If weighted, scale the sum
     let ss_weighted = match weights {
-        Some(w) => {
-            ndarray::Zip::from(y)
-                .and(mu)
-                .and(w)
-                .fold(0.0, |acc, &yi, &mui, &wi| {
-                    let diff = yi - mui;
-                    acc + wi * diff * diff
-                })
-        }
+        Some(w) => ndarray::Zip::from(y)
+            .and(mu)
+            .and(w)
+            .fold(0.0, |acc, &yi, &mui, &wi| {
+                let diff = yi - mui;
+                acc + wi * diff * diff
+            }),
         None => ss,
     };
-    
+
     // Log-likelihood
     -0.5 * (ss_weighted / scale + sum_wt * (2.0 * PI * scale).ln())
 }
@@ -109,16 +105,14 @@ pub fn log_likelihood_poisson(
     weights: Option<&Array1<f64>>,
 ) -> f64 {
     use statrs::function::gamma::ln_gamma;
-    
-    let contributions: Array1<f64> = ndarray::Zip::from(y)
-        .and(mu)
-        .map_collect(|&yi, &mui| {
-            // y × log(μ) - μ - log(y!)
-            // log(y!) = ln_gamma(y + 1)
-            let log_factorial = ln_gamma(yi + 1.0);
-            yi * mui.ln() - mui - log_factorial
-        });
-    
+
+    let contributions: Array1<f64> = ndarray::Zip::from(y).and(mu).map_collect(|&yi, &mui| {
+        // y × log(μ) - μ - log(y!)
+        // log(y!) = ln_gamma(y + 1)
+        let log_factorial = ln_gamma(yi + 1.0);
+        yi * mui.ln() - mui - log_factorial
+    });
+
     match weights {
         Some(w) => (&contributions * w).sum(),
         None => contributions.sum(),
@@ -141,28 +135,20 @@ pub fn log_likelihood_binomial(
     mu: &Array1<f64>,
     weights: Option<&Array1<f64>>,
 ) -> f64 {
-    let contributions: Array1<f64> = ndarray::Zip::from(y)
-        .and(mu)
-        .map_collect(|&yi, &mui| {
-            // Clamp μ to avoid log(0)
-            let mui_safe = mui.max(MU_MIN_PROBABILITY).min(MU_MAX_PROBABILITY);
-            
-            // y × log(μ) + (1-y) × log(1-μ)
-            let ll = if yi > 0.0 {
-                yi * mui_safe.ln()
-            } else {
-                0.0
-            };
-            
-            let ll = if yi < 1.0 {
-                ll + (1.0 - yi) * (1.0 - mui_safe).ln()
-            } else {
-                ll
-            };
-            
+    let contributions: Array1<f64> = ndarray::Zip::from(y).and(mu).map_collect(|&yi, &mui| {
+        // Clamp μ to avoid log(0)
+        let mui_safe = mui.clamp(MU_MIN_PROBABILITY, MU_MAX_PROBABILITY);
+
+        // y × log(μ) + (1-y) × log(1-μ)
+        let ll = if yi > 0.0 { yi * mui_safe.ln() } else { 0.0 };
+
+        if yi < 1.0 {
+            ll + (1.0 - yi) * (1.0 - mui_safe).ln()
+        } else {
             ll
-        });
-    
+        }
+    });
+
     match weights {
         Some(w) => (&contributions * w).sum(),
         None => contributions.sum(),
@@ -190,30 +176,26 @@ pub fn log_likelihood_gamma(
     scale: f64,
     weights: Option<&Array1<f64>>,
 ) -> f64 {
-    use statrs::function::gamma::ln_gamma;
     use crate::constants::MU_MIN_POSITIVE;
-    
+    use statrs::function::gamma::ln_gamma;
+
     // shape α = 1/scale = 1/φ
     let alpha = 1.0 / scale;
-    
-    let contributions: Array1<f64> = ndarray::Zip::from(y)
-        .and(mu)
-        .map_collect(|&yi, &mui| {
-            // Floor y and mu to prevent log(0) issues
-            // Note: Gamma requires y > 0, but we handle zeros gracefully
-            let yi_safe = yi.max(MU_MIN_POSITIVE);
-            let mui_safe = mui.max(MU_MIN_POSITIVE);
-            
-            // Full Gamma log-likelihood (statsmodels formula):
-            // ℓ_i = (α-1)·log(y) - α·y/μ + α·log(α/μ) - log(Γ(α))
-            //     = (α-1)·log(y) - α·y/μ + α·log(α) - α·log(μ) - log(Γ(α))
-            let ll = (alpha - 1.0) * yi_safe.ln()
-                   - alpha * yi_safe / mui_safe
-                   + alpha * (alpha / mui_safe).ln()
-                   - ln_gamma(alpha);
-            ll
-        });
-    
+
+    let contributions: Array1<f64> = ndarray::Zip::from(y).and(mu).map_collect(|&yi, &mui| {
+        // Floor y and mu to prevent log(0) issues
+        // Note: Gamma requires y > 0, but we handle zeros gracefully
+        let yi_safe = yi.max(MU_MIN_POSITIVE);
+        let mui_safe = mui.max(MU_MIN_POSITIVE);
+
+        // Full Gamma log-likelihood (statsmodels formula):
+        // ℓ_i = (α-1)·log(y) - α·y/μ + α·log(α/μ) - log(Γ(α))
+        //     = (α-1)·log(y) - α·y/μ + α·log(α) - α·log(μ) - log(Γ(α))
+
+        (alpha - 1.0) * yi_safe.ln() - alpha * yi_safe / mui_safe + alpha * (alpha / mui_safe).ln()
+            - ln_gamma(alpha)
+    });
+
     match weights {
         Some(w) => (&contributions * w).sum(),
         None => contributions.sum(),
@@ -263,7 +245,7 @@ pub fn bic(llf: f64, n_params: usize, n_obs: usize) -> f64 {
 /// before accounting for predictors. It's used to compute pseudo R².
 ///
 /// For most families, the intercept-only model predicts the weighted
-/// mean of y for all observations. When an offset is present (e.g., 
+/// mean of y for all observations. When an offset is present (e.g.,
 /// log(exposure) for count models), the null model accounts for it.
 ///
 /// # Arguments
@@ -294,28 +276,32 @@ pub fn null_deviance_with_offset(
     offset: Option<&Array1<f64>>,
 ) -> Result<f64, String> {
     let n = y.len();
-    
+
     // Compute null model predictions accounting for offset
     let mu_null: Array1<f64> = match offset {
         Some(off) => {
             // For log-link families (Poisson, NegBin, Gamma), offset is on log scale
             // mu_null = mean_rate * exp(offset), where mean_rate = sum(y) / sum(exp(offset))
             let family_lower = family_name.to_lowercase();
-            let is_log_link = family_lower.starts_with("poisson") 
-                || family_lower.starts_with("negbin") 
+            let is_log_link = family_lower.starts_with("poisson")
+                || family_lower.starts_with("negbin")
                 || family_lower.starts_with("negativebinomial")
                 || family_lower.starts_with("gamma")
                 || family_lower.starts_with("quasipoisson");
-            
+
             if is_log_link {
                 // exp(offset) gives the exposure
                 let exp_offset: Array1<f64> = off.mapv(|x| x.exp());
                 let sum_exp_offset: f64 = match weights {
-                    Some(w) => ndarray::Zip::from(&exp_offset).and(w).fold(0.0, |acc, &e, &wi| acc + e * wi),
+                    Some(w) => ndarray::Zip::from(&exp_offset)
+                        .and(w)
+                        .fold(0.0, |acc, &e, &wi| acc + e * wi),
                     None => exp_offset.sum(),
                 };
                 let sum_y: f64 = match weights {
-                    Some(w) => ndarray::Zip::from(y).and(w).fold(0.0, |acc, &yi, &wi| acc + yi * wi),
+                    Some(w) => ndarray::Zip::from(y)
+                        .and(w)
+                        .fold(0.0, |acc, &yi, &wi| acc + yi * wi),
                     None => y.sum(),
                 };
                 let mean_rate = sum_y / sum_exp_offset;
@@ -324,7 +310,9 @@ pub fn null_deviance_with_offset(
                 // For identity link, just use weighted mean of y
                 let (sum_y, sum_w) = match weights {
                     Some(w) => {
-                        let sy: f64 = ndarray::Zip::from(y).and(w).fold(0.0, |acc, &yi, &wi| acc + yi * wi);
+                        let sy: f64 = ndarray::Zip::from(y)
+                            .and(w)
+                            .fold(0.0, |acc, &yi, &wi| acc + yi * wi);
                         let sw: f64 = w.sum();
                         (sy, sw)
                     }
@@ -338,7 +326,9 @@ pub fn null_deviance_with_offset(
             // No offset: use weighted mean
             let (sum_y, sum_w) = match weights {
                 Some(w) => {
-                    let sy: f64 = ndarray::Zip::from(y).and(w).fold(0.0, |acc, &yi, &wi| acc + yi * wi);
+                    let sy: f64 = ndarray::Zip::from(y)
+                        .and(w)
+                        .fold(0.0, |acc, &yi, &wi| acc + yi * wi);
                     let sw: f64 = w.sum();
                     (sy, sw)
                 }
@@ -348,7 +338,7 @@ pub fn null_deviance_with_offset(
             Array1::from_elem(n, y_mean)
         }
     };
-    
+
     // Compute unit deviances based on family (case-insensitive matching)
     let unit_dev: Array1<f64> = match family_name.to_lowercase().as_str() {
         "gaussian" | "normal" => {
@@ -378,7 +368,7 @@ pub fn null_deviance_with_offset(
             ndarray::Zip::from(y)
                 .and(&mu_null)
                 .map_collect(|&yi, &mui| {
-                    let mui_safe = mui.max(MU_MIN_PROBABILITY).min(MU_MAX_PROBABILITY);
+                    let mui_safe = mui.clamp(MU_MIN_PROBABILITY, MU_MAX_PROBABILITY);
                     let mut dev = 0.0;
                     if yi > 0.0 {
                         dev += yi * (yi / mui_safe).ln();
@@ -408,9 +398,9 @@ pub fn null_deviance_with_offset(
                 let end = rest.find(')').unwrap_or(rest.len());
                 rest[..end].parse::<f64>().unwrap_or(1.0)
             } else {
-                1.0  // Default theta
+                1.0 // Default theta
             };
-            
+
             // 2 × [y × log(y/μ) - (y + θ) × log((y + θ)/(μ + θ))]
             // For y=0: 2 × θ × log(θ/(μ + θ))
             ndarray::Zip::from(y)
@@ -422,7 +412,8 @@ pub fn null_deviance_with_offset(
                         2.0 * theta * (theta / (mui_safe + theta)).ln()
                     } else {
                         // General case
-                        2.0 * (yi * (yi / mui_safe).ln() - (yi + theta) * ((yi + theta) / (mui_safe + theta)).ln())
+                        2.0 * (yi * (yi / mui_safe).ln()
+                            - (yi + theta) * ((yi + theta) / (mui_safe + theta)).ln())
                     }
                 })
         }
@@ -431,7 +422,7 @@ pub fn null_deviance_with_offset(
                    Supported families: gaussian, poisson, binomial, gamma, quasipoisson, quasibinomial, negativebinomial.", other));
         }
     };
-    
+
     // Sum up (weighted if applicable)
     Ok(match weights {
         Some(w) => (&unit_dev * w).sum(),
@@ -452,17 +443,21 @@ pub fn null_deviance_for_family(
     offset: Option<&Array1<f64>>,
 ) -> f64 {
     let n = y.len();
-    
+
     let mu_null: Array1<f64> = match offset {
         Some(off) => {
             if family.is_log_link_default() {
                 let exp_offset: Array1<f64> = off.mapv(|x| x.exp());
                 let sum_exp_offset: f64 = match weights {
-                    Some(w) => ndarray::Zip::from(&exp_offset).and(w).fold(0.0, |acc, &e, &wi| acc + e * wi),
+                    Some(w) => ndarray::Zip::from(&exp_offset)
+                        .and(w)
+                        .fold(0.0, |acc, &e, &wi| acc + e * wi),
                     None => exp_offset.sum(),
                 };
                 let sum_y: f64 = match weights {
-                    Some(w) => ndarray::Zip::from(y).and(w).fold(0.0, |acc, &yi, &wi| acc + yi * wi),
+                    Some(w) => ndarray::Zip::from(y)
+                        .and(w)
+                        .fold(0.0, |acc, &yi, &wi| acc + yi * wi),
                     None => y.sum(),
                 };
                 let mean_rate = sum_y / sum_exp_offset;
@@ -470,7 +465,9 @@ pub fn null_deviance_for_family(
             } else {
                 let (sum_y, sum_w) = match weights {
                     Some(w) => {
-                        let sy: f64 = ndarray::Zip::from(y).and(w).fold(0.0, |acc, &yi, &wi| acc + yi * wi);
+                        let sy: f64 = ndarray::Zip::from(y)
+                            .and(w)
+                            .fold(0.0, |acc, &yi, &wi| acc + yi * wi);
                         (sy, w.sum())
                     }
                     None => (y.sum(), n as f64),
@@ -481,7 +478,9 @@ pub fn null_deviance_for_family(
         None => {
             let (sum_y, sum_w) = match weights {
                 Some(w) => {
-                    let sy: f64 = ndarray::Zip::from(y).and(w).fold(0.0, |acc, &yi, &wi| acc + yi * wi);
+                    let sy: f64 = ndarray::Zip::from(y)
+                        .and(w)
+                        .fold(0.0, |acc, &yi, &wi| acc + yi * wi);
                     (sy, w.sum())
                 }
                 None => (y.sum(), n as f64),
@@ -489,10 +488,10 @@ pub fn null_deviance_for_family(
             Array1::from_elem(n, sum_y / sum_w)
         }
     };
-    
+
     // Use the family's own unit_deviance — no string dispatch needed
     let unit_dev = family.unit_deviance(y, &mu_null);
-    
+
     match weights {
         Some(w) => (&unit_dev * w).sum(),
         None => unit_dev.sum(),
@@ -506,46 +505,46 @@ pub fn null_deviance_for_family(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ndarray::array;
     use approx::assert_abs_diff_eq;
+    use ndarray::array;
 
     #[test]
     fn test_log_likelihood_gaussian() {
         let y = array![1.0, 2.0, 3.0];
-        let mu = array![1.0, 2.0, 3.0];  // Perfect fit
+        let mu = array![1.0, 2.0, 3.0]; // Perfect fit
         let scale = 1.0;
-        
+
         let llf = log_likelihood_gaussian(&y, &mu, scale, None);
-        
+
         // With perfect fit, SS = 0
         // ℓ = -0.5 × n × log(2πσ²) = -0.5 × 3 × log(2π)
         let expected = -0.5 * 3.0 * (2.0 * PI).ln();
         assert_abs_diff_eq!(llf, expected, epsilon = 1e-10);
     }
-    
+
     #[test]
     fn test_log_likelihood_gaussian_imperfect() {
         let y = array![1.0, 2.0, 3.0];
-        let mu = array![1.5, 2.5, 3.5];  // Errors of 0.5
+        let mu = array![1.5, 2.5, 3.5]; // Errors of 0.5
         let scale = 1.0;
-        
+
         let llf = log_likelihood_gaussian(&y, &mu, scale, None);
-        
+
         // SS = 3 × 0.25 = 0.75
         // ℓ = -0.5 × (0.75/1 + 3 × log(2π))
         let expected = -0.5 * (0.75 + 3.0 * (2.0 * PI).ln());
         assert_abs_diff_eq!(llf, expected, epsilon = 1e-10);
     }
-    
+
     #[test]
     fn test_log_likelihood_gaussian_weighted() {
         let y = array![1.0, 2.0];
-        let mu = array![1.0, 3.0];  // Errors: 0, 1
+        let mu = array![1.0, 3.0]; // Errors: 0, 1
         let w = array![1.0, 2.0];
         let scale = 1.0;
-        
+
         let llf = log_likelihood_gaussian(&y, &mu, scale, Some(&w));
-        
+
         // Weighted SS = 1×0 + 2×1 = 2
         // sum_wt = 3
         // ℓ = -0.5 × (2/1 + 3 × log(2π))
@@ -558,33 +557,33 @@ mod tests {
         // Simple test: y = μ = 1 for all observations
         let y = array![1.0, 1.0, 1.0];
         let mu = array![1.0, 1.0, 1.0];
-        
+
         let llf = log_likelihood_poisson(&y, &mu, None);
-        
+
         // For y=μ=1: 1×log(1) - 1 - log(1!) = 0 - 1 - 0 = -1 per obs
         // Total: -3
         assert_abs_diff_eq!(llf, -3.0, epsilon = 1e-10);
     }
-    
+
     #[test]
     fn test_log_likelihood_poisson_weighted() {
         let y = array![1.0, 2.0];
         let mu = array![1.0, 2.0];
         let w = array![1.0, 2.0];
-        
+
         let llf = log_likelihood_poisson(&y, &mu, Some(&w));
-        
+
         // Weighted sum should be computed
         assert!(llf < 0.0);
     }
-    
+
     #[test]
     fn test_log_likelihood_poisson_zero_y() {
         let y = array![0.0, 0.0];
         let mu = array![1.0, 2.0];
-        
+
         let llf = log_likelihood_poisson(&y, &mu, None);
-        
+
         // For y=0: 0×log(μ) - μ - log(0!) = -μ - 0 = -μ
         // Total: -1 - 2 = -3
         assert_abs_diff_eq!(llf, -3.0, epsilon = 1e-10);
@@ -594,74 +593,74 @@ mod tests {
     fn test_log_likelihood_binomial() {
         let y = array![1.0, 0.0];
         let mu = array![0.8, 0.2];
-        
+
         let llf = log_likelihood_binomial(&y, &mu, None);
-        
+
         // 1×log(0.8) + 0×log(0.2) + 0×log(0.2) + 1×log(0.8)
         // = log(0.8) + log(0.8) = 2×log(0.8)
         let expected = 0.8_f64.ln() + 0.8_f64.ln();
         assert_abs_diff_eq!(llf, expected, epsilon = 1e-10);
     }
-    
+
     #[test]
     fn test_log_likelihood_binomial_weighted() {
         let y = array![1.0, 0.0];
         let mu = array![0.9, 0.1];
         let w = array![2.0, 1.0];
-        
+
         let llf = log_likelihood_binomial(&y, &mu, Some(&w));
-        
+
         // Weighted: 2×log(0.9) + 1×log(0.9)
         let expected = 2.0 * 0.9_f64.ln() + 1.0 * 0.9_f64.ln();
         assert_abs_diff_eq!(llf, expected, epsilon = 1e-10);
     }
-    
+
     #[test]
     fn test_log_likelihood_binomial_proportions() {
         // Test with proportions (not just 0/1)
         let y = array![0.5, 0.5];
         let mu = array![0.5, 0.5];
-        
+
         let llf = log_likelihood_binomial(&y, &mu, None);
-        
+
         // 0.5×log(0.5) + 0.5×log(0.5) per obs
         let per_obs = 0.5 * 0.5_f64.ln() + 0.5 * 0.5_f64.ln();
         assert_abs_diff_eq!(llf, 2.0 * per_obs, epsilon = 1e-10);
     }
-    
+
     #[test]
     fn test_log_likelihood_gamma() {
         let y = array![1.0, 2.0, 3.0];
-        let mu = array![1.0, 2.0, 3.0];  // Perfect fit
-        let scale = 1.0;  // α = 1
-        
+        let mu = array![1.0, 2.0, 3.0]; // Perfect fit
+        let scale = 1.0; // α = 1
+
         let llf = log_likelihood_gamma(&y, &mu, scale, None);
-        
+
         // With perfect fit and α=1, should get finite negative value
         assert!(llf.is_finite());
         assert!(llf < 0.0);
     }
-    
+
     #[test]
     fn test_log_likelihood_gamma_weighted() {
         let y = array![1.0, 2.0];
         let mu = array![1.0, 2.0];
         let w = array![1.0, 2.0];
-        let scale = 0.5;  // α = 2
-        
+        let scale = 0.5; // α = 2
+
         let llf = log_likelihood_gamma(&y, &mu, scale, Some(&w));
-        
+
         assert!(llf.is_finite());
     }
-    
+
     #[test]
     fn test_log_likelihood_gamma_small_scale() {
         let y = array![1.0, 2.0, 3.0];
         let mu = array![1.0, 2.0, 3.0];
-        let scale = 0.1;  // α = 10 (high shape)
-        
+        let scale = 0.1; // α = 10 (high shape)
+
         let llf = log_likelihood_gamma(&y, &mu, scale, None);
-        
+
         assert!(llf.is_finite());
     }
 
@@ -669,20 +668,20 @@ mod tests {
     fn test_aic() {
         let llf = -100.0;
         let n_params = 5;
-        
+
         let aic_val = aic(llf, n_params);
-        
+
         // AIC = -2×(-100) + 2×5 = 200 + 10 = 210
         assert_abs_diff_eq!(aic_val, 210.0, epsilon = 1e-10);
     }
-    
+
     #[test]
     fn test_aic_zero_params() {
         let llf = -50.0;
         let n_params = 0;
-        
+
         let aic_val = aic(llf, n_params);
-        
+
         // AIC = -2×(-50) + 0 = 100
         assert_abs_diff_eq!(aic_val, 100.0, epsilon = 1e-10);
     }
@@ -692,22 +691,22 @@ mod tests {
         let llf = -100.0;
         let n_params = 5;
         let n_obs = 100;
-        
+
         let bic_val = bic(llf, n_params, n_obs);
-        
+
         // BIC = -2×(-100) + 5×log(100) = 200 + 5×4.605... ≈ 223.03
         let expected = 200.0 + 5.0 * 100.0_f64.ln();
         assert_abs_diff_eq!(bic_val, expected, epsilon = 1e-10);
     }
-    
+
     #[test]
     fn test_bic_small_sample() {
         let llf = -50.0;
         let n_params = 3;
         let n_obs = 10;
-        
+
         let bic_val = bic(llf, n_params, n_obs);
-        
+
         // BIC = -2×(-50) + 3×log(10) = 100 + 3×2.303
         let expected = 100.0 + 3.0 * 10.0_f64.ln();
         assert_abs_diff_eq!(bic_val, expected, epsilon = 1e-10);
@@ -716,21 +715,21 @@ mod tests {
     #[test]
     fn test_null_deviance_gaussian() {
         let y = array![1.0, 2.0, 3.0, 4.0, 5.0];
-        
+
         let null_dev = null_deviance(&y, "Gaussian", None).unwrap();
-        
+
         // Mean = 3.0
         // Null deviance = Σ(y - 3)² = 4 + 1 + 0 + 1 + 4 = 10
         assert_abs_diff_eq!(null_dev, 10.0, epsilon = 1e-10);
     }
-    
+
     #[test]
     fn test_null_deviance_normal() {
         // Test case-insensitive "normal" alias
         let y = array![1.0, 3.0];
-        
+
         let null_dev = null_deviance(&y, "normal", None).unwrap();
-        
+
         // Mean = 2.0
         // Null deviance = (1-2)² + (3-2)² = 1 + 1 = 2
         assert_abs_diff_eq!(null_dev, 2.0, epsilon = 1e-10);
@@ -739,137 +738,139 @@ mod tests {
     #[test]
     fn test_null_deviance_poisson() {
         let y = array![0.0, 1.0, 2.0, 3.0, 4.0];
-        
+
         let null_dev = null_deviance(&y, "Poisson", None).unwrap();
-        
+
         // Mean = 2.0
         // This is more complex to compute manually, but should be positive
         assert!(null_dev > 0.0);
     }
-    
+
     #[test]
     fn test_null_deviance_quasipoisson() {
         let y = array![1.0, 2.0, 3.0];
-        
+
         let null_dev = null_deviance(&y, "quasipoisson", None).unwrap();
-        
+
         assert!(null_dev >= 0.0);
     }
 
     #[test]
     fn test_null_deviance_weighted() {
         let y = array![1.0, 5.0];
-        let weights = array![3.0, 1.0];  // More weight on first obs
-        
+        let weights = array![3.0, 1.0]; // More weight on first obs
+
         let null_dev = null_deviance(&y, "Gaussian", Some(&weights)).unwrap();
-        
+
         // Weighted mean = (3×1 + 1×5) / 4 = 8/4 = 2.0
         // Null deviance = 3×(1-2)² + 1×(5-2)² = 3×1 + 1×9 = 12
         assert_abs_diff_eq!(null_dev, 12.0, epsilon = 1e-10);
     }
-    
+
     #[test]
     fn test_null_deviance_binomial() {
         let y = array![0.0, 1.0, 0.0, 1.0];
-        
+
         let null_dev = null_deviance(&y, "binomial", None).unwrap();
-        
+
         // Mean = 0.5
         // Should be positive
         assert!(null_dev > 0.0);
     }
-    
+
     #[test]
     fn test_null_deviance_quasibinomial() {
         let y = array![0.0, 0.0, 1.0, 1.0];
-        
+
         let null_dev = null_deviance(&y, "quasibinomial", None).unwrap();
-        
+
         assert!(null_dev >= 0.0);
     }
-    
+
     #[test]
     fn test_null_deviance_gamma() {
         let y = array![1.0, 2.0, 3.0, 4.0];
-        
+
         let null_dev = null_deviance(&y, "gamma", None).unwrap();
-        
+
         // Mean = 2.5
         // Should be positive
         assert!(null_dev >= 0.0);
     }
-    
+
     #[test]
     fn test_null_deviance_negativebinomial() {
-        let y = array![1.0, 2.0, 3.0, 4.0];  // All positive values
-        
+        let y = array![1.0, 2.0, 3.0, 4.0]; // All positive values
+
         let null_dev = null_deviance(&y, "negativebinomial", None).unwrap();
-        
+
         // Negative binomial deviance can be negative for some edge cases
         assert!(null_dev.is_finite());
     }
-    
+
     #[test]
     fn test_null_deviance_negativebinomial_with_theta() {
-        let y = array![1.0, 2.0, 3.0, 4.0];  // All positive values
-        
+        let y = array![1.0, 2.0, 3.0, 4.0]; // All positive values
+
         let null_dev = null_deviance(&y, "negativebinomial(theta=2.5)", None).unwrap();
-        
+
         // Negative binomial deviance should be finite
         assert!(null_dev.is_finite());
     }
-    
+
     #[test]
     fn test_null_deviance_with_offset_poisson() {
         let y = array![1.0, 2.0, 4.0];
-        let offset = array![0.0, 0.693, 1.386];  // log(1), log(2), log(4)
-        
+        let offset = array![0.0, 0.693, 1.386]; // log(1), log(2), log(4)
+
         let null_dev = null_deviance_with_offset(&y, "poisson", None, Some(&offset)).unwrap();
-        
+
         // With offset, null model accounts for exposure
         assert!(null_dev >= 0.0);
     }
-    
+
     #[test]
     fn test_null_deviance_with_offset_gaussian() {
         let y = array![1.0, 2.0, 3.0];
         let offset = array![0.0, 0.0, 0.0];
-        
+
         let null_dev = null_deviance_with_offset(&y, "gaussian", None, Some(&offset)).unwrap();
-        
+
         // With zero offset, should match regular null deviance
         let null_dev_no_offset = null_deviance(&y, "gaussian", None).unwrap();
         assert_abs_diff_eq!(null_dev, null_dev_no_offset, epsilon = 1e-10);
     }
-    
+
     #[test]
     fn test_null_deviance_with_offset_gamma() {
         let y = array![1.0, 2.0, 3.0];
         let offset = array![0.0, 0.5, 1.0];
-        
+
         let null_dev = null_deviance_with_offset(&y, "gamma", None, Some(&offset)).unwrap();
-        
+
         assert!(null_dev >= 0.0);
     }
-    
+
     #[test]
     fn test_null_deviance_with_offset_negbinomial() {
         let y = array![1.0, 2.0, 3.0];
         let offset = array![0.0, 0.5, 1.0];
-        
-        let null_dev = null_deviance_with_offset(&y, "negbinomial(theta=1.5)", None, Some(&offset)).unwrap();
-        
+
+        let null_dev =
+            null_deviance_with_offset(&y, "negbinomial(theta=1.5)", None, Some(&offset)).unwrap();
+
         assert!(null_dev >= 0.0);
     }
-    
+
     #[test]
     fn test_null_deviance_with_offset_weighted() {
         let y = array![1.0, 2.0];
         let offset = array![0.0, 0.5];
         let weights = array![1.0, 2.0];
-        
-        let null_dev = null_deviance_with_offset(&y, "poisson", Some(&weights), Some(&offset)).unwrap();
-        
+
+        let null_dev =
+            null_deviance_with_offset(&y, "poisson", Some(&weights), Some(&offset)).unwrap();
+
         assert!(null_dev >= 0.0);
     }
 }

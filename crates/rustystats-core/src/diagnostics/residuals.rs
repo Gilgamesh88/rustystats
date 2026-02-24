@@ -29,10 +29,10 @@
 //
 // =============================================================================
 
-use ndarray::Array1;
+use crate::constants::ZERO_TOL;
 use crate::families::Family;
 use crate::links::Link;
-use crate::constants::ZERO_TOL;
+use ndarray::Array1;
 
 /// Compute response (raw) residuals: y - μ
 ///
@@ -73,7 +73,7 @@ pub fn resid_response(y: &Array1<f64>, mu: &Array1<f64>) -> Array1<f64> {
 /// Pattern in residuals vs fitted may indicate model problems.
 pub fn resid_pearson(y: &Array1<f64>, mu: &Array1<f64>, family: &dyn Family) -> Array1<f64> {
     let variance = family.variance(mu);
-    
+
     ndarray::Zip::from(y)
         .and(mu)
         .and(&variance)
@@ -101,7 +101,7 @@ pub fn resid_pearson(y: &Array1<f64>, mu: &Array1<f64>, family: &dyn Family) -> 
 /// sum(resid_deviance²) = model deviance
 pub fn resid_deviance(y: &Array1<f64>, mu: &Array1<f64>, family: &dyn Family) -> Array1<f64> {
     let unit_dev = family.unit_deviance(y, mu);
-    
+
     ndarray::Zip::from(y)
         .and(mu)
         .and(&unit_dev)
@@ -125,13 +125,11 @@ pub fn resid_deviance(y: &Array1<f64>, mu: &Array1<f64>, family: &dyn Family) ->
 /// Array of working residuals
 pub fn resid_working(y: &Array1<f64>, mu: &Array1<f64>, link: &dyn Link) -> Array1<f64> {
     let link_deriv = link.derivative(mu);
-    
+
     ndarray::Zip::from(y)
         .and(mu)
         .and(&link_deriv)
-        .map_collect(|&yi, &mui, &di| {
-            (yi - mui) * di
-        })
+        .map_collect(|&yi, &mui, &di| (yi - mui) * di)
 }
 
 // =============================================================================
@@ -143,16 +141,16 @@ mod tests {
     use super::*;
     use crate::families::{GaussianFamily, PoissonFamily};
     use crate::links::{IdentityLink, LogLink};
-    use ndarray::array;
     use approx::assert_abs_diff_eq;
+    use ndarray::array;
 
     #[test]
     fn test_response_residuals() {
         let y = array![1.0, 2.0, 3.0];
         let mu = array![1.1, 2.0, 2.8];
-        
+
         let resid = resid_response(&y, &mu);
-        
+
         let expected = array![-0.1, 0.0, 0.2];
         assert_abs_diff_eq!(resid, expected, epsilon = 1e-10);
     }
@@ -162,9 +160,9 @@ mod tests {
         let y = array![1.0, 2.0, 3.0];
         let mu = array![1.5, 2.0, 2.5];
         let family = GaussianFamily;
-        
+
         let resid = resid_pearson(&y, &mu, &family);
-        
+
         // For Gaussian, V(μ) = 1, so Pearson = response
         let expected = array![-0.5, 0.0, 0.5];
         assert_abs_diff_eq!(resid, expected, epsilon = 1e-10);
@@ -175,9 +173,9 @@ mod tests {
         let y = array![4.0];
         let mu = array![2.0];
         let family = PoissonFamily;
-        
+
         let resid = resid_pearson(&y, &mu, &family);
-        
+
         // (4 - 2) / √2 = 2 / 1.414... ≈ 1.414
         let expected = (4.0 - 2.0) / 2.0_f64.sqrt();
         assert_abs_diff_eq!(resid[0], expected, epsilon = 1e-10);
@@ -188,9 +186,9 @@ mod tests {
         let y = array![1.0, 2.0, 3.0];
         let mu = array![1.5, 2.0, 2.5];
         let family = GaussianFamily;
-        
+
         let resid = resid_deviance(&y, &mu, &family);
-        
+
         // For Gaussian, unit deviance = (y-μ)²
         // Deviance residual = sign(y-μ) × |y-μ| = y-μ
         let expected = array![-0.5, 0.0, 0.5];
@@ -202,12 +200,12 @@ mod tests {
         let y = array![1.0, 2.0, 5.0, 3.0];
         let mu = array![1.2, 1.8, 4.5, 3.2];
         let family = PoissonFamily;
-        
+
         let resid = resid_deviance(&y, &mu, &family);
         let sum_sq: f64 = resid.iter().map(|&r| r * r).sum();
-        
+
         let deviance = family.deviance(&y, &mu, None);
-        
+
         assert_abs_diff_eq!(sum_sq, deviance, epsilon = 1e-10);
     }
 
@@ -216,9 +214,9 @@ mod tests {
         let y = array![1.0, 2.0, 3.0];
         let mu = array![1.5, 2.0, 2.5];
         let link = IdentityLink;
-        
+
         let resid = resid_working(&y, &mu, &link);
-        
+
         // For identity link, g'(μ) = 1, so working = response
         let expected = array![-0.5, 0.0, 0.5];
         assert_abs_diff_eq!(resid, expected, epsilon = 1e-10);
@@ -229,9 +227,9 @@ mod tests {
         let y = array![3.0];
         let mu = array![2.0];
         let link = LogLink;
-        
+
         let resid = resid_working(&y, &mu, &link);
-        
+
         // For log link, g'(μ) = 1/μ
         // Working residual = (y - μ) / μ = (3 - 2) / 2 = 0.5
         let expected = (3.0 - 2.0) / 2.0;

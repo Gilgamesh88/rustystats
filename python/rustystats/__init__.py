@@ -48,85 +48,92 @@ Available Link Functions
 For Actuaries
 -------------
 - **Claim Frequency**: Use Poisson family with log link
-- **Claim Severity**: Use Gamma family with log link  
+- **Claim Severity**: Use Gamma family with log link
 - **Claim Occurrence**: Use Binomial family with logit link
 - **Pure Premium**: Use Tweedie family with var_power=1.5
 """
 
-# Version of the package (must match pyproject.toml)
-__version__ = "0.3.8"
+# Version of the package (read from installed package metadata)
+try:
+    from importlib.metadata import version
+
+    __version__ = version("rustystats")
+except Exception:
+    __version__ = "0.0.0"
 
 # Import the Rust extension module
 # This contains the fast implementations
+# Import Python wrappers
+from rustystats import families, links
 from rustystats._rustystats import (
-    # Link functions
-    IdentityLink,
-    LogLink,
-    LogitLink,
-    # Families
-    GaussianFamily,
-    PoissonFamily,
     BinomialFamily,
     GammaFamily,
-    TweedieFamily,
+    # Families
+    GaussianFamily,
     # GLM results type
     GLMResults,
-    # Spline functions (raw Rust)
-    bs_py as _bs_rust,
-    ns_py as _ns_rust,
+    # Link functions
+    IdentityLink,
+    LogitLink,
+    LogLink,
+    PoissonFamily,
+    TweedieFamily,
 )
-
-# Import Python wrappers
-from rustystats import families
-from rustystats import links
-from rustystats.glm import summary, summary_relativities
-
-# Dict-based API (the primary API)
-from rustystats.formula import GLMModel, glm_dict, FormulaGLMDict
-
-# Spline basis functions (for non-linear continuous effects)
-from rustystats.splines import bs, ns, bs_names, ns_names, SplineTerm
-
-# Penalized spline utilities (for GAMs with automatic smoothness selection)
-from rustystats.smooth import penalty_matrix, difference_matrix, gcv_score, compute_edf
-
-# Target encoding (CatBoost-style ordered target statistics)
-from rustystats.target_encoding import (
-    target_encode,
-    apply_target_encoding,
-    TargetEncoder,
-    # Frequency encoding (CatBoost Counter CTR)
-    frequency_encode,
-    apply_frequency_encoding,
-    FrequencyEncoder,
-    # Target encoding for interactions
-    target_encode_interaction,
+from rustystats._rustystats import (
+    # Spline functions (raw Rust)
+    bs_py as _bs_rust,  # noqa: F401
+)
+from rustystats._rustystats import (
+    ns_py as _ns_rust,  # noqa: F401
 )
 
 # Model diagnostics
 from rustystats.diagnostics import (
-    compute_diagnostics,
-    ModelDiagnostics,
-    DiagnosticsComputer,
-    explore_data,
     DataExploration,
     DataExplorer,
+    DiagnosticsComputer,
+    ModelDiagnostics,
+    compute_diagnostics,
+    explore_data,
 )
-
-# Model export (PMML / ONNX)
-from rustystats.export_pmml import to_pmml
-from rustystats.export_onnx import to_onnx
 
 # Exceptions
 from rustystats.exceptions import (
-    RustyStatsError,
-    DesignMatrixError,
-    FittingError,
     ConvergenceError,
-    PredictionError,
+    DesignMatrixError,
     EncodingError,
-    ValidationError,
+    FittingError,
+    PredictionError,
+    RustyStatsError,
     SerializationError,
+    ValidationError,
+)
+from rustystats.export_onnx import to_onnx
+
+# Model export (PMML / ONNX)
+from rustystats.export_pmml import to_pmml
+
+# Dict-based API (the primary API)
+from rustystats.formula import FormulaGLMDict, GLMModel, glm_dict
+from rustystats.glm import summary, summary_relativities
+
+# Penalized spline utilities (for GAMs with automatic smoothness selection)
+from rustystats.smooth import compute_edf, difference_matrix, gcv_score, penalty_matrix
+
+# Spline basis functions (for non-linear continuous effects)
+from rustystats.splines import SplineTerm, bs, bs_names, ns, ns_names
+
+# Target encoding (CatBoost-style ordered target statistics)
+from rustystats.target_encoding import (
+    FrequencyEncoder,
+    TargetEncoder,
+    apply_frequency_encoding,
+    apply_target_encoding,
+    # Frequency encoding (CatBoost Counter CTR)
+    frequency_encode,
+    target_encode,
+    # Target encoding for interactions
+    target_encode_interaction,
 )
 
 # Input validation (for advanced users who want to pre-validate)
@@ -158,7 +165,6 @@ __all__ = [
     "target_encode",
     "apply_target_encoding",
     "TargetEncoder",
-    "TargetEncodingTerm",
     # Frequency encoding
     "frequency_encode",
     "apply_frequency_encoding",

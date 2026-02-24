@@ -49,12 +49,12 @@ use ndarray::ArrayView2;
 use ndarray::{Array1, Array2};
 use rayon::prelude::*;
 
-use crate::constants::{ZERO_TOL, MAX_IRLS_WEIGHT};
-use crate::error::{RustyStatsError, Result};
+use super::irls::{IRLSConfig, IRLSResult};
+use crate::constants::{MAX_IRLS_WEIGHT, ZERO_TOL};
+use crate::error::{Result, RustyStatsError};
 use crate::families::Family;
 use crate::links::Link;
 use crate::regularization::{soft_threshold, RegularizationConfig};
-use super::irls::{IRLSConfig, IRLSResult};
 
 /// Fit a GLM using coordinate descent with L1/Elastic Net penalty.
 ///
@@ -114,7 +114,7 @@ pub(crate) fn fit_glm_coordinate_descent(
     let l1_penalty = reg_config.penalty.l1_penalty();
     let l2_penalty = reg_config.penalty.l2_penalty();
     let has_intercept = reg_config.fit_intercept;
-    
+
     // Starting index for penalized coefficients
     let pen_start = if has_intercept { 1 } else { 0 };
 
@@ -158,7 +158,7 @@ pub(crate) fn fit_glm_coordinate_descent(
     // Step 1: Precompute X'X diagonal (sum of squared predictors, weighted)
     // These are recomputed each IRLS iteration with updated weights
     // -------------------------------------------------------------------------
-    
+
     // -------------------------------------------------------------------------
     // Step 2: Initialize coefficients and μ (with warm start support)
     // -------------------------------------------------------------------------
@@ -170,20 +170,21 @@ pub(crate) fn fit_glm_coordinate_descent(
             eprintln!(
                 "Warning: Warm-start coefficient dimension mismatch (got {}, expected {}). \
                 Falling back to cold start. This may indicate a bug in the caller.",
-                init.len(), p
+                init.len(),
+                p
             );
             Array1::zeros(p)
         }
     } else {
         Array1::zeros(p)
     };
-    
+
     // Initialize intercept to link(mean(y)) only if not warm starting
     if init_coefficients.is_none() && has_intercept {
         let y_mean = y.mean().unwrap_or(1.0);
         let y_mean_clamped = match family.name() {
             "Poisson" | "Gamma" => y_mean.max(0.01),
-            "Binomial" => y_mean.max(0.01).min(0.99),
+            "Binomial" => y_mean.clamp(0.01, 0.99),
             _ => y_mean,
         };
         coefficients[0] = link.link(&Array1::from_elem(1, y_mean_clamped))[0];
@@ -230,14 +231,18 @@ pub(crate) fn fit_glm_coordinate_descent(
         // OPTIMIZATION: Use true Hessian weights for Gamma/Tweedie with log link
         // This can dramatically reduce IRLS iterations (50-100 → 5-10)
         let link_deriv = link.derivative(&mu);
-        
+
         let use_true_hessian = family.use_true_hessian_weights() && link.name() == "log";
         let hessian_weights = if use_true_hessian {
             Some(family.true_hessian_weights(&mu, y))
         } else {
             None
         };
-        let variance = if use_true_hessian { None } else { Some(family.variance(&mu)) };
+        let variance = if use_true_hessian {
+            None
+        } else {
+            Some(family.variance(&mu))
+        };
 
         // PARALLEL: Compute IRLS weights, combined weights, and working response
         let min_weight = irls_config.min_weight;
@@ -249,7 +254,9 @@ pub(crate) fn fit_glm_coordinate_descent(
                     // True Hessian weight - use directly without dividing by d²
                     hw[i].max(min_weight).min(MAX_IRLS_WEIGHT)
                 } else {
-                    let v = variance.as_ref().unwrap()[i];
+                    let v = variance
+                        .as_ref()
+                        .expect("variance present in Fisher branch")[i];
                     (1.0 / (v * d * d)).max(min_weight).min(MAX_IRLS_WEIGHT)
                 };
                 let cw = prior_weights_vec[i] * iw;
@@ -257,7 +264,7 @@ pub(crate) fn fit_glm_coordinate_descent(
                 (iw, cw, wr)
             })
             .collect();
-        
+
         let mut combined_weights_vec = Vec::with_capacity(n);
         let mut working_response_vec = Vec::with_capacity(n);
         for (i, &(iw, cw, wr)) in results.iter().enumerate() {
@@ -265,7 +272,7 @@ pub(crate) fn fit_glm_coordinate_descent(
             combined_weights_vec.push(cw);
             working_response_vec.push(wr);
         }
-        
+
         let combined_weights = Array1::from_vec(combined_weights_vec);
         let working_response = Array1::from_vec(working_response_vec);
 
@@ -284,10 +291,10 @@ pub(crate) fn fit_glm_coordinate_descent(
         //                          = grad_j + (X'WX)_{jj}β_j
         // where grad_j = X_j'Wz - Σ_k (X'WX)_{jk}β_k
         // ---------------------------------------------------------------------
-        
+
         let mut cd_converged = false;
         let mut cd_iteration = 0;
-        
+
         // Precompute X'Wz (gradient at β=0) - PARALLEL
         let xwz: Vec<f64> = (0..p)
             .into_par_iter()
@@ -300,7 +307,7 @@ pub(crate) fn fit_glm_coordinate_descent(
                     .sum()
             })
             .collect();
-        
+
         // Precompute X'WX (Gram matrix) - PARALLEL with flat Vec for cache locality
         let xwx: Vec<f64> = (0..n)
             .into_par_iter()
@@ -321,11 +328,13 @@ pub(crate) fn fit_glm_coordinate_descent(
             .reduce(
                 || vec![0.0; p * p],
                 |mut a, b| {
-                    for i in 0..a.len() { a[i] += b[i]; }
+                    for i in 0..a.len() {
+                        a[i] += b[i];
+                    }
                     a
                 },
             );
-        
+
         // Fill in lower triangle (symmetric)
         let mut xwx_full = xwx;
         for j in 0..p {
@@ -338,7 +347,7 @@ pub(crate) fn fit_glm_coordinate_descent(
         // Active set: track which coefficients are non-zero for faster iterations
         let mut active_set: Vec<usize> = (0..p).collect();
         let mut use_active_set = false;
-        
+
         while cd_iteration < reg_config.max_cd_iterations {
             cd_iteration += 1;
             let mut max_change = 0.0_f64;
@@ -355,13 +364,13 @@ pub(crate) fn fit_glm_coordinate_descent(
             // Update each coefficient using covariance updates
             for &j in indices_to_update {
                 let old_coef = coefficients[j];
-                
+
                 // Compute gradient: grad_j = X_j'Wz - Σ_k (X'WX)_{jk}β_k
                 let mut grad_j = xwz[j];
                 for k in 0..p {
                     grad_j -= xwx[j * p + k] * coefficients[k];
                 }
-                
+
                 // rho = grad_j + (X'WX)_{jj} * old_coef
                 let xwx_jj = xwx[j * p + j];
                 let rho = grad_j + xwx_jj * old_coef;
@@ -435,7 +444,11 @@ pub(crate) fn fit_glm_coordinate_descent(
         };
 
         if irls_config.verbose {
-            let n_nonzero = coefficients.iter().skip(pen_start).filter(|&&c| c.abs() > ZERO_TOL).count();
+            let n_nonzero = coefficients
+                .iter()
+                .skip(pen_start)
+                .filter(|&&c| c.abs() > ZERO_TOL)
+                .count();
             eprintln!(
                 "IRLS iter {}: deviance = {:.6}, rel_change = {:.2e}, nonzero = {}",
                 outer_iteration, deviance, rel_change, n_nonzero
@@ -456,7 +469,7 @@ pub(crate) fn fit_glm_coordinate_descent(
     // For penalized models (Lasso/Elastic Net), standard errors are approximate.
     // The covariance is computed using only non-zero coefficients, which does not
     // account for the selection bias introduced by penalization.
-    // 
+    //
     // For rigorous inference on regularized models, consider:
     // 1. Bootstrap confidence intervals
     // 2. De-biased Lasso methods
@@ -467,7 +480,13 @@ pub(crate) fn fit_glm_coordinate_descent(
     let cov_unscaled = if skip_covariance {
         Array2::zeros((p, p))
     } else {
-        compute_penalized_covariance(x, &irls_weights, &prior_weights_vec, &coefficients, pen_start)
+        compute_penalized_covariance(
+            x,
+            &irls_weights,
+            &prior_weights_vec,
+            &coefficients,
+            pen_start,
+        )
     };
 
     Ok(IRLSResult {
@@ -484,7 +503,7 @@ pub(crate) fn fit_glm_coordinate_descent(
         y: y.to_owned(),
         family_name: family.name().to_string(),
         penalty: reg_config.penalty.clone(),
-        design_matrix: None,  // Computed lazily in Python layer to avoid expensive copy
+        design_matrix: None, // Computed lazily in Python layer to avoid expensive copy
     })
 }
 
@@ -501,11 +520,11 @@ fn compute_penalized_covariance(
 ) -> Array2<f64> {
     let p = x.ncols();
     let n = x.nrows();
-    
+
     // Compute (X'WX)⁻¹ only for the "active" (non-zero) coefficients
     // This is a simplified approach
     let mut cov = Array2::zeros((p, p));
-    
+
     // Combined weights
     let weights: Vec<f64> = irls_weights
         .iter()
@@ -516,9 +535,7 @@ fn compute_penalized_covariance(
     // Compute X'WX
     for i in 0..p {
         for j in i..p {
-            let val: f64 = (0..n)
-                .map(|k| weights[k] * x[[k, i]] * x[[k, j]])
-                .sum();
+            let val: f64 = (0..n).map(|k| weights[k] * x[[k, i]] * x[[k, j]]).sum();
             cov[[i, j]] = val;
             cov[[j, i]] = val;
         }
@@ -564,41 +581,52 @@ mod tests {
         let x = Array2::from_shape_vec(
             (10, 4),
             vec![
-                1.0, 1.0, 0.1, 0.2,
-                1.0, 2.0, 0.2, 0.1,
-                1.0, 3.0, 0.3, 0.3,
-                1.0, 4.0, 0.1, 0.2,
-                1.0, 5.0, 0.2, 0.1,
-                1.0, 6.0, 0.3, 0.2,
-                1.0, 7.0, 0.1, 0.3,
-                1.0, 8.0, 0.2, 0.1,
-                1.0, 9.0, 0.3, 0.2,
-                1.0, 10.0, 0.1, 0.1,
+                1.0, 1.0, 0.1, 0.2, 1.0, 2.0, 0.2, 0.1, 1.0, 3.0, 0.3, 0.3, 1.0, 4.0, 0.1, 0.2,
+                1.0, 5.0, 0.2, 0.1, 1.0, 6.0, 0.3, 0.2, 1.0, 7.0, 0.1, 0.3, 1.0, 8.0, 0.2, 0.1,
+                1.0, 9.0, 0.3, 0.2, 1.0, 10.0, 0.1, 0.1,
             ],
         )
         .unwrap();
-        
+
         // y strongly related to x1, weakly to x2, x3
         let y = array![5.0, 8.0, 11.0, 14.0, 17.0, 20.0, 23.0, 26.0, 29.0, 32.0];
 
         let family = GaussianFamily;
         let link = IdentityLink;
         let irls_config = IRLSConfig::default();
-        
+
         // Strong Lasso penalty
         let reg_config = RegularizationConfig::lasso(5.0);
-        let result = fit_glm_coordinate_descent(&y, x.view(), &family, &link, &irls_config, &reg_config, None, None, None, false).unwrap();
+        let result = fit_glm_coordinate_descent(
+            &y,
+            x.view(),
+            &family,
+            &link,
+            &irls_config,
+            &reg_config,
+            None,
+            None,
+            None,
+            false,
+        )
+        .unwrap();
 
         assert!(result.converged);
-        
+
         // The weak predictors (columns 2, 3) should be shrunk toward or to zero
         // The strong predictor (column 1) should remain non-zero
-        assert!(result.coefficients[1].abs() > 0.5, "Strong predictor should be non-zero");
-        
+        assert!(
+            result.coefficients[1].abs() > 0.5,
+            "Strong predictor should be non-zero"
+        );
+
         // At least one of the weak predictors should be near zero
         let weak_coefs: Vec<f64> = vec![result.coefficients[2], result.coefficients[3]];
         let has_near_zero = weak_coefs.iter().any(|&c| c.abs() < 0.1);
-        assert!(has_near_zero, "Lasso should shrink weak predictors toward zero");
+        assert!(
+            has_near_zero,
+            "Lasso should shrink weak predictors toward zero"
+        );
     }
 
     #[test]
@@ -606,13 +634,7 @@ mod tests {
         // Lasso with small lambda should give similar results to unpenalized
         let x = Array2::from_shape_vec(
             (5, 2),
-            vec![
-                1.0, 1.0,
-                1.0, 2.0,
-                1.0, 3.0,
-                1.0, 4.0,
-                1.0, 5.0,
-            ],
+            vec![1.0, 1.0, 1.0, 2.0, 1.0, 3.0, 1.0, 4.0, 1.0, 5.0],
         )
         .unwrap();
         let y = array![5.0, 8.0, 11.0, 14.0, 17.0];
@@ -620,16 +642,36 @@ mod tests {
         let family = GaussianFamily;
         let link = IdentityLink;
         let mut irls_config = IRLSConfig::default();
-        irls_config.max_iterations = 50;  // More iterations for small penalty
-        
+        irls_config.max_iterations = 50; // More iterations for small penalty
+
         // Very small Lasso penalty
         let reg_config = RegularizationConfig::lasso(0.001);
-        let result = fit_glm_coordinate_descent(&y, x.view(), &family, &link, &irls_config, &reg_config, None, None, None, false).unwrap();
+        let result = fit_glm_coordinate_descent(
+            &y,
+            x.view(),
+            &family,
+            &link,
+            &irls_config,
+            &reg_config,
+            None,
+            None,
+            None,
+            false,
+        )
+        .unwrap();
 
         // With Gaussian + identity link, should converge quickly or reach good solution
         // Coefficients should be close to OLS (intercept ~2, slope ~3)
-        assert!((result.coefficients[0] - 2.0).abs() < 1.0, "Intercept: {}", result.coefficients[0]);
-        assert!((result.coefficients[1] - 3.0).abs() < 0.5, "Slope: {}", result.coefficients[1]);
+        assert!(
+            (result.coefficients[0] - 2.0).abs() < 1.0,
+            "Intercept: {}",
+            result.coefficients[0]
+        );
+        assert!(
+            (result.coefficients[1] - 3.0).abs() < 0.5,
+            "Slope: {}",
+            result.coefficients[1]
+        );
     }
 
     #[test]
@@ -638,12 +680,8 @@ mod tests {
         let x = Array2::from_shape_vec(
             (6, 3),
             vec![
-                1.0, 1.0, 1.1,  // x2 and x3 are correlated
-                1.0, 2.0, 2.2,
-                1.0, 3.0, 3.1,
-                1.0, 4.0, 4.3,
-                1.0, 5.0, 5.2,
-                1.0, 6.0, 6.1,
+                1.0, 1.0, 1.1, // x2 and x3 are correlated
+                1.0, 2.0, 2.2, 1.0, 3.0, 3.1, 1.0, 4.0, 4.3, 1.0, 5.0, 5.2, 1.0, 6.0, 6.1,
             ],
         )
         .unwrap();
@@ -653,14 +691,26 @@ mod tests {
         let link = IdentityLink;
         let mut irls_config = IRLSConfig::default();
         irls_config.max_iterations = 50;
-        
+
         // Elastic Net: 50% L1, 50% L2
         let reg_config = RegularizationConfig::elastic_net(1.0, 0.5);
-        let result = fit_glm_coordinate_descent(&y, x.view(), &family, &link, &irls_config, &reg_config, None, None, None, false).unwrap();
+        let result = fit_glm_coordinate_descent(
+            &y,
+            x.view(),
+            &family,
+            &link,
+            &irls_config,
+            &reg_config,
+            None,
+            None,
+            None,
+            false,
+        )
+        .unwrap();
 
         // Should produce reasonable fitted values even if not converged
         assert!(result.fitted_values.iter().all(|&x| x.is_finite()));
-        
+
         // Elastic net should spread weight across correlated predictors
         // (unlike pure Lasso which often picks just one)
     }
@@ -670,14 +720,7 @@ mod tests {
         // Lasso should work with Poisson family
         let x = Array2::from_shape_vec(
             (6, 2),
-            vec![
-                1.0, 0.0,
-                1.0, 1.0,
-                1.0, 2.0,
-                1.0, 3.0,
-                1.0, 4.0,
-                1.0, 5.0,
-            ],
+            vec![1.0, 0.0, 1.0, 1.0, 1.0, 2.0, 1.0, 3.0, 1.0, 4.0, 1.0, 5.0],
         )
         .unwrap();
         let y = array![2.0, 3.0, 4.0, 6.0, 8.0, 12.0];
@@ -685,9 +728,21 @@ mod tests {
         let family = PoissonFamily;
         let link = LogLink;
         let irls_config = IRLSConfig::default();
-        
+
         let reg_config = RegularizationConfig::lasso(0.1);
-        let result = fit_glm_coordinate_descent(&y, x.view(), &family, &link, &irls_config, &reg_config, None, None, None, false).unwrap();
+        let result = fit_glm_coordinate_descent(
+            &y,
+            x.view(),
+            &family,
+            &link,
+            &irls_config,
+            &reg_config,
+            None,
+            None,
+            None,
+            false,
+        )
+        .unwrap();
 
         assert!(result.converged);
         assert!(result.fitted_values.iter().all(|&x| x > 0.0));
@@ -698,13 +753,7 @@ mod tests {
         // Intercept should never be zero even with strong penalty
         let x = Array2::from_shape_vec(
             (5, 2),
-            vec![
-                1.0, 1.0,
-                1.0, 2.0,
-                1.0, 3.0,
-                1.0, 4.0,
-                1.0, 5.0,
-            ],
+            vec![1.0, 1.0, 1.0, 2.0, 1.0, 3.0, 1.0, 4.0, 1.0, 5.0],
         )
         .unwrap();
         let y = array![10.0, 10.0, 10.0, 10.0, 10.0]; // Constant y
@@ -712,19 +761,37 @@ mod tests {
         let family = GaussianFamily;
         let link = IdentityLink;
         let irls_config = IRLSConfig::default();
-        
+
         // Very strong Lasso penalty
         let reg_config = RegularizationConfig::lasso(100.0);
-        let result = fit_glm_coordinate_descent(&y, x.view(), &family, &link, &irls_config, &reg_config, None, None, None, false).unwrap();
+        let result = fit_glm_coordinate_descent(
+            &y,
+            x.view(),
+            &family,
+            &link,
+            &irls_config,
+            &reg_config,
+            None,
+            None,
+            None,
+            false,
+        )
+        .unwrap();
 
         assert!(result.converged);
-        
+
         // Intercept should be around 10 (mean of y)
-        assert!((result.coefficients[0] - 10.0).abs() < 1.0, 
-            "Intercept should be ~10: {}", result.coefficients[0]);
-        
+        assert!(
+            (result.coefficients[0] - 10.0).abs() < 1.0,
+            "Intercept should be ~10: {}",
+            result.coefficients[0]
+        );
+
         // Slope should be zero (no relationship + strong penalty)
-        assert!(result.coefficients[1].abs() < 0.01,
-            "Slope should be ~0: {}", result.coefficients[1]);
+        assert!(
+            result.coefficients[1].abs() < 0.01,
+            "Slope should be ~0: {}",
+            result.coefficients[1]
+        );
     }
 }

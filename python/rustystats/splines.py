@@ -19,7 +19,7 @@ Both `bs()` and `ns()` support two modes:
 **Fixed df mode:** Use `df` parameter for fixed degrees of freedom
     >>> basis = rs.bs(x, df=5)  # Exactly 5 df, no penalty
 
-**Explicit penalized smooth:** Use `k` parameter 
+**Explicit penalized smooth:** Use `k` parameter
     >>> basis = rs.bs(x, k=15)  # 15 basis functions, penalized
 
 **Monotonicity (bs only):** Use `monotonicity` parameter for constrained effects
@@ -29,7 +29,7 @@ Example
 -------
 >>> import rustystats as rs
 >>> import numpy as np
->>> 
+>>>
 >>> # Fixed df B-spline
 >>> age = np.array([25, 35, 45, 55, 65])
 >>> age_basis = rs.bs(age, df=5)
@@ -67,43 +67,52 @@ large datasets.
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+
 import numpy as np
 
 from rustystats.exceptions import ValidationError
 
 if TYPE_CHECKING:
-    import polars as pl
+    pass
 
 # Import Rust implementations
 from rustystats._rustystats import (
-    bs_py as _bs_rust,
-    ns_py as _ns_rust,
-    ns_with_knots_py as _ns_with_knots_rust,
     bs_knots_py as _bs_knots_rust,
+)
+from rustystats._rustystats import (
     bs_names_py as _bs_names_rust,
-    ns_names_py as _ns_names_rust,
-    ms_py as _ms_rust,  # Used internally by bs() with monotonicity parameter
-    ms_with_knots_py as _ms_with_knots_rust,  # Monotonic splines with explicit knots
+)
+from rustystats._rustystats import (
+    bs_py as _bs_rust,
+)
+from rustystats._rustystats import (
+    ns_names_py as _ns_names_rust,  # Monotonic splines with explicit knots
+)
+from rustystats._rustystats import (
+    ns_py as _ns_rust,
+)
+from rustystats._rustystats import (
+    ns_with_knots_py as _ns_with_knots_rust,
 )
 
 
 def bs(
     x: np.ndarray,
-    df: Optional[int] = None,
-    k: Optional[int] = None,
+    df: int | None = None,
+    k: int | None = None,
     degree: int = 3,
-    knots: Optional[List[float]] = None,
-    boundary_knots: Optional[Tuple[float, float]] = None,
+    knots: list[float] | None = None,
+    boundary_knots: tuple[float, float] | None = None,
     include_intercept: bool = False,
-    monotonicity: Optional[str] = None,
+    monotonicity: str | None = None,
 ) -> np.ndarray:
     """
     Compute B-spline basis matrix.
-    
+
     B-splines (basis splines) are piecewise polynomial functions that provide
     a flexible way to model non-linear relationships. They are the foundation
     for many modern smoothing techniques.
-    
+
     Parameters
     ----------
     x : array-like
@@ -138,56 +147,56 @@ def bs(
         - "decreasing": Effect must decrease with x
         - None (default): No monotonicity constraint
         Uses I-spline (integrated M-spline) basis internally.
-    
+
     Returns
     -------
     numpy.ndarray
         Basis matrix of shape (n, basis_size) where n is the length of x.
-    
+
     Notes
     -----
     **Fixed df vs penalized smooth (k):**
-    
+
     - Use `df` when you know the exact flexibility needed
     - Use `k` when you want automatic smoothness selection via GCV
-    
+
     **Monotonicity:**
-    
+
     When monotonicity is specified, I-splines are used. Each basis function
     increases from 0 to 1, and with non-negative coefficients (enforced during
     fitting), the resulting curve is monotonic.
-    
+
     Examples
     --------
     >>> import rustystats as rs
     >>> import numpy as np
-    >>> 
+    >>>
     >>> # Fixed df B-spline
     >>> x = np.linspace(0, 10, 100)
     >>> basis = rs.bs(x, df=5)
     >>> print(basis.shape)
     (100, 4)
-    
+
     >>> # Penalized smooth (auto-smoothing via GCV)
     >>> basis = rs.bs(x, k=10)  # Will be penalized during fitting
-    
+
     >>> # Monotonically increasing spline
     >>> basis = rs.bs(x, df=5, monotonicity="increasing")
-    
+
     See Also
     --------
     ns : Natural spline basis (linear at boundaries)
     """
     # Convert to numpy array
     x = np.asarray(x, dtype=np.float64).ravel()
-    
+
     # Determine effective df
     if df is not None and k is not None:
         raise ValidationError("Specify either 'df' (fixed) or 'k' (penalized), not both.")
-    
+
     # Default to penalized smooth (k=10) if neither df nor k specified
     effective_df = df if df is not None else (k if k is not None else 10)
-    
+
     # Handle monotonicity — use regular B-spline basis.
     # The solver enforces monotonicity via PAVA projection on B-spline
     # coefficients (non-decreasing for increasing, non-increasing for
@@ -198,7 +207,7 @@ def bs(
                 f"monotonicity must be 'increasing' or 'decreasing', got '{monotonicity}'"
             )
         # Fall through to the standard B-spline path below
-    
+
     if knots is not None:
         # Use explicit knots
         result = _bs_knots_rust(x, knots, degree, boundary_knots)
@@ -213,21 +222,21 @@ def bs(
 
 def ns(
     x: np.ndarray,
-    df: Optional[int] = None,
-    k: Optional[int] = None,
-    knots: Optional[List[float]] = None,
-    boundary_knots: Optional[Tuple[float, float]] = None,
+    df: int | None = None,
+    k: int | None = None,
+    knots: list[float] | None = None,
+    boundary_knots: tuple[float, float] | None = None,
     include_intercept: bool = False,
 ) -> np.ndarray:
     """
     Compute natural cubic spline basis matrix.
-    
+
     Natural splines are cubic splines with the additional constraint that
     the function is linear beyond the boundary knots. This constraint:
     - Reduces the effective degrees of freedom by 2
     - Provides more sensible extrapolation behavior
     - Often gives more stable parameter estimates
-    
+
     Parameters
     ----------
     x : array-like
@@ -248,66 +257,66 @@ def ns(
         spline is constrained to be linear.
     include_intercept : bool, default=False
         Whether to include an intercept basis function.
-    
+
     Returns
     -------
     numpy.ndarray
         Basis matrix of shape (n, basis_size).
-    
+
     Notes
     -----
     **Fixed df vs penalized smooth (k):**
-    
+
     - Use `df` when you know the exact flexibility needed
     - Use `k` when you want automatic smoothness selection via GCV
-    
+
     Natural splines impose the constraint that the second derivative
     is zero at the boundaries. This means:
-    
+
     1. The spline is linear (not curved) outside the boundary knots
     2. Extrapolation beyond the data range is more sensible
     3. The fit is often more stable near the boundaries
-    
+
     For these reasons, natural splines are often preferred for:
     - Prediction on new data that may be outside the training range
     - Actuarial applications where extrapolation is common
     - When boundary behavior needs to be controlled
-    
+
     Examples
     --------
     >>> import rustystats as rs
     >>> import numpy as np
-    >>> 
+    >>>
     >>> # Fixed df natural spline
     >>> age = np.array([20, 30, 40, 50, 60, 70])
     >>> basis = rs.ns(age, df=4)
     >>> print(basis.shape)
     (6, 3)
-    
+
     >>> # Penalized smooth (auto-smoothing via GCV)
     >>> basis = rs.ns(age, k=10)  # Will be penalized during fitting
-    
+
     >>> # For an age effect in a GLM with linear extrapolation
     >>> basis = rs.ns(age, df=4, boundary_knots=(20, 70))
-    
+
     See Also
     --------
     bs : B-spline basis (more flexible at boundaries)
     """
     # Convert to numpy array
     x = np.asarray(x, dtype=np.float64).ravel()
-    
+
     # Determine effective df
     if df is not None and k is not None:
         raise ValidationError("Specify either 'df' (fixed) or 'k' (penalized), not both.")
-    
+
     # Default to penalized smooth (k=10) if neither df nor k specified
     effective_df = df if df is not None else (k if k is not None else 10)
-    
+
     # If explicit interior knots are provided, use them for consistent prediction
     if knots is not None and boundary_knots is not None:
         return _ns_with_knots_rust(x, knots, boundary_knots, include_intercept)
-    
+
     # Otherwise compute knots from data (training mode)
     return _ns_rust(x, effective_df, boundary_knots, include_intercept)
 
@@ -316,10 +325,10 @@ def bs_names(
     var_name: str,
     df: int,
     include_intercept: bool = False,
-) -> List[str]:
+) -> list[str]:
     """
     Generate column names for B-spline basis functions.
-    
+
     Parameters
     ----------
     var_name : str
@@ -328,12 +337,12 @@ def bs_names(
         Degrees of freedom used
     include_intercept : bool, default=False
         Whether intercept was included
-    
+
     Returns
     -------
     list of str
         Names like ['bs(age, 1/5)', 'bs(age, 2/5)', ...]
-    
+
     Example
     -------
     >>> rs.bs_names("age", df=5)
@@ -346,10 +355,10 @@ def ns_names(
     var_name: str,
     df: int,
     include_intercept: bool = False,
-) -> List[str]:
+) -> list[str]:
     """
     Generate column names for natural spline basis functions.
-    
+
     Parameters
     ----------
     var_name : str
@@ -358,7 +367,7 @@ def ns_names(
         Degrees of freedom used
     include_intercept : bool, default=False
         Whether intercept was included
-    
+
     Returns
     -------
     list of str
@@ -370,10 +379,10 @@ def ns_names(
 class SplineTerm:
     """
     Represents a spline term for use in formula parsing.
-    
+
     This class stores the specification for a spline transformation
     and can compute the basis matrix when given data.
-    
+
     Attributes
     ----------
     var_name : str
@@ -389,15 +398,15 @@ class SplineTerm:
     monotonicity : str or None
         'increasing', 'decreasing', or None (no constraint)
     """
-    
+
     def __init__(
         self,
         var_name: str,
         spline_type: str = "bs",
         df: int = 5,
         degree: int = 3,
-        boundary_knots: Optional[Tuple[float, float]] = None,
-        monotonicity: Optional[str] = None,
+        boundary_knots: tuple[float, float] | None = None,
+        monotonicity: str | None = None,
     ):
         self.var_name = var_name
         self.spline_type = spline_type.lower()
@@ -406,28 +415,28 @@ class SplineTerm:
         self.boundary_knots = boundary_knots
         self.monotonicity = monotonicity
         # Computed during transform - stores knot information
-        self._computed_boundary_knots: Optional[Tuple[float, float]] = None
-        self._computed_internal_knots: Optional[List[float]] = None
+        self._computed_boundary_knots: tuple[float, float] | None = None
+        self._computed_internal_knots: list[float] | None = None
         # Track if this is a smooth term with automatic lambda selection
         self._is_smooth = False
         # Penalty matrix for smooth terms (computed during transform)
-        self._penalty_matrix: Optional[np.ndarray] = None
+        self._penalty_matrix: np.ndarray | None = None
         # Lambda and EDF after fitting (set by fitting code)
-        self._lambda: Optional[float] = None
-        self._edf: Optional[float] = None
-        
+        self._lambda: float | None = None
+        self._edf: float | None = None
+
         if self.spline_type not in ("bs", "ns", "ms"):
             raise ValidationError(f"spline_type must be 'bs', 'ns', or 'ms', got '{spline_type}'")
-    
-    def transform(self, x: np.ndarray) -> Tuple[np.ndarray, List[str]]:
+
+    def transform(self, x: np.ndarray) -> tuple[np.ndarray, list[str]]:
         """
         Compute the spline basis for the given data.
-        
+
         Parameters
         ----------
         x : np.ndarray
             Data values to transform
-        
+
         Returns
         -------
         basis : np.ndarray
@@ -440,46 +449,58 @@ class SplineTerm:
         x_arr = np.asarray(x).ravel()
         if self._computed_boundary_knots is None:
             # First call - compute and store knots using Rust for consistency
-            from rustystats._rustystats import compute_knots_py, compute_knots_natural_py
-            
+            from rustystats._rustystats import compute_knots_natural_py, compute_knots_py
+
             bk = self.boundary_knots  # user-specified or None
-            
+
             if self.spline_type == "bs":
                 interior, (x_min, x_max) = compute_knots_py(
-                    x_arr, self.df, self.degree, bk,
+                    x_arr,
+                    self.df,
+                    self.degree,
+                    bk,
                 )
             else:  # ns, ms
                 interior, (x_min, x_max) = compute_knots_natural_py(
-                    x_arr, self.df, bk,
+                    x_arr,
+                    self.df,
+                    bk,
                 )
-            
+
             self._computed_boundary_knots = (x_min, x_max)
             self._computed_internal_knots = list(interior)
-        
+
         # Use stored boundary knots for basis computation
         boundary_knots_to_use = self._computed_boundary_knots
-        
+
         effective_monotonicity = self.monotonicity
-        
+
         if self.spline_type == "bs":
             # Use bs() with monotonicity parameter for unified API
             # Pass stored internal knots to ensure consistent basis on new data
-            basis = bs(x, df=self.df, degree=self.degree,
-                      knots=self._computed_internal_knots,
-                      boundary_knots=boundary_knots_to_use, include_intercept=False,
-                      monotonicity=effective_monotonicity)
-            
+            basis = bs(
+                x,
+                df=self.df,
+                degree=self.degree,
+                knots=self._computed_internal_knots,
+                boundary_knots=boundary_knots_to_use,
+                include_intercept=False,
+                monotonicity=effective_monotonicity,
+            )
+
             # Generate appropriate names
             n_cols = basis.shape[1]
             if self._is_smooth:
                 if effective_monotonicity:
                     sign = "+" if effective_monotonicity == "increasing" else "-"
-                    names = [f"bs({self.var_name}, {i+1}/{n_cols}, k, {sign})" for i in range(n_cols)]
+                    names = [
+                        f"bs({self.var_name}, {i + 1}/{n_cols}, k, {sign})" for i in range(n_cols)
+                    ]
                 else:
-                    names = [f"bs({self.var_name}, {i+1}/{n_cols}, k)" for i in range(n_cols)]
+                    names = [f"bs({self.var_name}, {i + 1}/{n_cols}, k)" for i in range(n_cols)]
             elif effective_monotonicity:
                 sign = "+" if effective_monotonicity == "increasing" else "-"
-                names = [f"bs({self.var_name}, {i+1}/{n_cols}, {sign})" for i in range(n_cols)]
+                names = [f"bs({self.var_name}, {i + 1}/{n_cols}, {sign})" for i in range(n_cols)]
             else:
                 names = bs_names(self.var_name, self.df, include_intercept=False)
         elif self.spline_type == "ns":
@@ -491,59 +512,73 @@ class SplineTerm:
                     f"instead, which uses I-splines designed for monotonic effects."
                 )
             # Pass stored internal knots to ensure consistent basis on new data
-            basis = ns(x, df=self.df, knots=self._computed_internal_knots,
-                      boundary_knots=boundary_knots_to_use,
-                      include_intercept=False)
+            basis = ns(
+                x,
+                df=self.df,
+                knots=self._computed_internal_knots,
+                boundary_knots=boundary_knots_to_use,
+                include_intercept=False,
+            )
             if self._is_smooth:
-                names = [f"ns({self.var_name}, {i+1}/{self.df}, k)" for i in range(self.df)]
+                names = [f"ns({self.var_name}, {i + 1}/{self.df}, k)" for i in range(self.df)]
             else:
                 names = ns_names(self.var_name, self.df, include_intercept=False)
         elif self.spline_type == "ms":
             # Monotonic splines use I-spline basis via bs() with monotonicity
             mono = self.monotonicity or "increasing"
-            basis = bs(x, df=self.df, degree=self.degree,
-                      knots=self._computed_internal_knots,
-                      boundary_knots=boundary_knots_to_use, include_intercept=False,
-                      monotonicity=mono)
+            basis = bs(
+                x,
+                df=self.df,
+                degree=self.degree,
+                knots=self._computed_internal_knots,
+                boundary_knots=boundary_knots_to_use,
+                include_intercept=False,
+                monotonicity=mono,
+            )
             sign = "+" if mono == "increasing" else "-"
             if self._is_smooth:
-                names = [f"ms({self.var_name}, {i+1}/{self.df}, k, {sign})" for i in range(self.df)]
+                names = [
+                    f"ms({self.var_name}, {i + 1}/{self.df}, k, {sign})" for i in range(self.df)
+                ]
             else:
-                names = [f"ms({self.var_name}, {i+1}/{self.df}, {sign})" for i in range(self.df)]
+                names = [f"ms({self.var_name}, {i + 1}/{self.df}, {sign})" for i in range(self.df)]
         else:
             raise ValidationError(f"Unknown spline_type: {self.spline_type}")
-        
+
         # Ensure names match columns
         if len(names) != basis.shape[1]:
-            names = [f"{self.spline_type}({self.var_name}, {i+1}/{basis.shape[1]})" 
-                    for i in range(basis.shape[1])]
-        
+            names = [
+                f"{self.spline_type}({self.var_name}, {i + 1}/{basis.shape[1]})"
+                for i in range(basis.shape[1])
+            ]
+
         return basis, names
-    
+
     def compute_penalty_matrix(self, n_cols: int, penalty_order: int = 2) -> np.ndarray:
         """
         Compute the penalty matrix for this smooth term.
-        
+
         Parameters
         ----------
         n_cols : int
             Number of columns in the basis (after transform)
         penalty_order : int
             Order of the difference penalty (default: 2 for smoothness).
-        
+
         Returns
         -------
         np.ndarray
             Penalty matrix of shape (n_cols, n_cols)
         """
         from rustystats.smooth import penalty_matrix
+
         self._penalty_matrix = penalty_matrix(n_cols, order=penalty_order)
         return self._penalty_matrix
-    
+
     def get_knot_info(self) -> dict:
         """
         Get knot information after transform has been called.
-        
+
         Returns
         -------
         dict
@@ -569,7 +604,7 @@ class SplineTerm:
             if self._edf is not None:
                 info["edf"] = self._edf
         return info
-    
+
     def __repr__(self) -> str:
         if self.spline_type == "bs":
             if self.monotonicity:

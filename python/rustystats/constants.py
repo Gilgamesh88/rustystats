@@ -107,8 +107,8 @@ DEFAULT_CORRELATION_THRESHOLD = 0.999
 # =============================================================================
 # Regularization Internals
 # =============================================================================
-L1_RATIO_MIN_CLAMP = 1e-3     # Floor for l1_ratio in alpha_max computation
-ALPHA_MAX_FLOOR = 1e-4        # Minimum alpha_max to avoid degenerate paths
+L1_RATIO_MIN_CLAMP = 1e-3  # Floor for l1_ratio in alpha_max computation
+ALPHA_MAX_FLOOR = 1e-4  # Minimum alpha_max to avoid degenerate paths
 DEFAULT_ELASTIC_NET_L1_RATIO = 0.5
 DEFAULT_CV_SEED = 42
 
@@ -130,9 +130,11 @@ DEFAULT_LINKS = {
 # =============================================================================
 # Family Aliases
 # =============================================================================
-NEGBINOMIAL_ALIASES = frozenset({
-    "negbinomial",
-    "negativebinomial", 
-    "negative_binomial",
-    "nb",
-})
+NEGBINOMIAL_ALIASES = frozenset(
+    {
+        "negbinomial",
+        "negativebinomial",
+        "negative_binomial",
+        "nb",
+    }
+)

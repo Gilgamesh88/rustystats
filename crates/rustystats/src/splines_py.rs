@@ -6,8 +6,8 @@
 // These are computed in Rust for maximum performance.
 // =============================================================================
 
-use pyo3::prelude::*;
 use numpy::{IntoPyArray, PyArray2, PyReadonlyArray1};
+use pyo3::prelude::*;
 
 use rustystats_core::splines;
 
@@ -137,7 +137,8 @@ pub fn ns_with_knots_py<'py>(
     include_intercept: bool,
 ) -> PyResult<Bound<'py, PyArray2<f64>>> {
     let x_array = x.as_array().to_owned();
-    let result = splines::ns_basis_with_knots(&x_array, &interior_knots, boundary_knots, include_intercept);
+    let result =
+        splines::ns_basis_with_knots(&x_array, &interior_knots, boundary_knots, include_intercept);
     Ok(result.into_pyarray_bound(py))
 }
 
@@ -272,7 +273,14 @@ pub fn ms_with_knots_py<'py>(
     increasing: bool,
 ) -> PyResult<Bound<'py, PyArray2<f64>>> {
     let x_array = x.as_array().to_owned();
-    let result = splines::is_basis_with_knots(&x_array, &interior_knots, degree, boundary_knots, df, increasing);
+    let result = splines::is_basis_with_knots(
+        &x_array,
+        &interior_knots,
+        degree,
+        boundary_knots,
+        df,
+        increasing,
+    );
     Ok(result.into_pyarray_bound(py))
 }
 

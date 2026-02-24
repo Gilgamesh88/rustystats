@@ -71,6 +71,7 @@ __all__ = [
 # Utility Functions
 # =============================================================================
 
+
 def _json_default(obj: Any) -> Any:
     """Handle special types for JSON serialization."""
     if isinstance(obj, float):
@@ -78,7 +79,7 @@ def _json_default(obj: Any) -> Any:
             return None
         if math.isinf(obj):
             return None
-    if hasattr(obj, '__dict__'):
+    if hasattr(obj, "__dict__"):
         return obj.__dict__
     return str(obj)
 
@@ -103,7 +104,7 @@ def _to_dict_recursive(obj) -> Any:
         return [_to_dict_recursive(v) for v in obj]
     elif isinstance(obj, SmoothTermDiagnostics):
         return obj.to_dict()
-    elif hasattr(obj, '__dataclass_fields__'):
+    elif hasattr(obj, "__dataclass_fields__"):
         result = {}
         for field_name in obj.__dataclass_fields__:
             value = getattr(obj, field_name)
@@ -125,7 +126,7 @@ def _to_dict_recursive(obj) -> Any:
 
 def _extract_base_variable(feature_name: str) -> str:
     """Extract base variable name from a feature name.
-    
+
     Examples:
         'BonusMalus' -> 'BonusMalus'
         'I(BonusMalus ** 2)' -> 'BonusMalus'
@@ -133,34 +134,34 @@ def _extract_base_variable(feature_name: str) -> str:
         'C(Region)[T.A]' -> 'Region'
     """
     name = feature_name.strip()
-    
-    match = re.match(r'pos\((.+)\)$', name)
+
+    match = re.match(r"pos\((.+)\)$", name)
     if match:
         return _extract_base_variable(match.group(1))
-    
-    match = re.match(r'C\(([^)]+)\)\[', name)
+
+    match = re.match(r"C\(([^)]+)\)\[", name)
     if match:
         return match.group(1).strip()
-    
-    match = re.match(r'ms\(([^,)]+)', name)
+
+    match = re.match(r"ms\(([^,)]+)", name)
     if match:
         return match.group(1).strip()
-    
-    match = re.match(r'(?:bs|ns|s)\(([^,)]+)', name)
+
+    match = re.match(r"(?:bs|ns|s)\(([^,)]+)", name)
     if match:
         return match.group(1).strip()
-    
-    match = re.match(r'I\(([a-zA-Z_][a-zA-Z0-9_]*)\s*\*\*', name)
+
+    match = re.match(r"I\(([a-zA-Z_][a-zA-Z0-9_]*)\s*\*\*", name)
     if match:
         return match.group(1).strip()
-    
-    match = re.match(r'(?:np\.)?(?:log|sqrt|exp|abs)\(([^)]+)\)', name)
+
+    match = re.match(r"(?:np\.)?(?:log|sqrt|exp|abs)\(([^)]+)\)", name)
     if match:
         return match.group(1).strip()
-    
-    if ':' in name:
-        return name.split(':')[0].strip()
-    
+
+    if ":" in name:
+        return name.split(":")[0].strip()
+
     return name
 
 
@@ -168,19 +169,22 @@ def _extract_base_variable(feature_name: str) -> str:
 # Basic Types
 # =============================================================================
 
+
 @dataclass
 class Percentiles:
     """Percentile values for a continuous variable (compact array format)."""
-    values: List[float]  # [p1, p5, p10, p25, p50, p75, p90, p95, p99]
-    
+
+    values: list[float]  # [p1, p5, p10, p25, p50, p75, p90, p95, p99]
+
     @classmethod
-    def from_values(cls, p1, p5, p10, p25, p50, p75, p90, p95, p99) -> "Percentiles":
+    def from_values(cls, p1, p5, p10, p25, p50, p75, p90, p95, p99) -> Percentiles:
         return cls(values=[p1, p5, p10, p25, p50, p75, p90, p95, p99])
 
 
 @dataclass
 class ResidualSummary:
     """Summary statistics for residuals."""
+
     mean: float
     std: float
     skewness: float
@@ -189,6 +193,7 @@ class ResidualSummary:
 @dataclass
 class CalibrationBin:
     """A single bin in the calibration curve."""
+
     bin_index: int
     predicted_lower: float
     predicted_upper: float
@@ -206,6 +211,7 @@ class CalibrationBin:
 @dataclass
 class LorenzPoint:
     """A point on the Lorenz curve."""
+
     cumulative_exposure_pct: float
     cumulative_actual_pct: float
     cumulative_predicted_pct: float
@@ -214,18 +220,20 @@ class LorenzPoint:
 @dataclass
 class ActualExpectedBin:
     """A/E statistics for a single bin."""
+
     bin: str
     n: int
     exposure: float
     actual: float
     expected: float
     ae_ratio: float
-    ae_ci: List[float]  # [lower, upper]
+    ae_ci: list[float]  # [lower, upper]
 
 
 @dataclass
 class ResidualPattern:
     """Residual pattern analysis for a factor."""
+
     resid_corr: float
     var_explained: float
 
@@ -234,20 +242,23 @@ class ResidualPattern:
 # Factor Statistics
 # =============================================================================
 
+
 @dataclass
 class ContinuousFactorStats:
     """Univariate statistics for a continuous factor."""
+
     mean: float
     std: float
     min: float
     max: float
     missing_count: int
-    percentiles: List[float]  # [p1, p5, p10, p25, p50, p75, p90, p95, p99]
+    percentiles: list[float]  # [p1, p5, p10, p25, p50, p75, p90, p95, p99]
 
 
 @dataclass
 class CategoricalLevelStats:
     """Statistics for a categorical level."""
+
     level: str
     count: int
     percentage: float
@@ -256,6 +267,7 @@ class CategoricalLevelStats:
 @dataclass
 class CategoricalFactorStats:
     """Distribution statistics for a categorical factor."""
+
     n_levels: int
     n_rare_levels: int
     rare_level_total_pct: float
@@ -264,94 +276,104 @@ class CategoricalFactorStats:
 @dataclass
 class FactorSignificance:
     """Statistical significance tests for a factor."""
-    chi2: Optional[float]
-    p: Optional[float]
-    dev_contrib: Optional[float]
-    dev_pct: Optional[float] = None
+
+    chi2: float | None
+    p: float | None
+    dev_contrib: float | None
+    dev_pct: float | None = None
 
 
 @dataclass
 class ScoreTestResult:
     """Rao's score test result for an unfitted factor."""
+
     statistic: float
     df: int
     pvalue: float
     significant: bool
-    expected_dev_pct: Optional[float] = None
+    expected_dev_pct: float | None = None
 
 
 @dataclass
 class FactorCoefficient:
     """Coefficient for a factor term."""
+
     term: str
     estimate: float
     std_error: float
     z_value: float
     p_value: float
-    relativity: Optional[float]
+    relativity: float | None
 
 
 @dataclass
 class FactorDiagnostics:
     """Complete diagnostics for a single factor."""
+
     name: str
     factor_type: str
     in_model: bool
-    transform: Optional[str]
-    coefficients: Optional[List[FactorCoefficient]]
-    actual_vs_expected: List[ActualExpectedBin]
+    transform: str | None
+    coefficients: list[FactorCoefficient] | None
+    actual_vs_expected: list[ActualExpectedBin]
     residual_pattern: ResidualPattern
-    univariate: Optional[Union[ContinuousFactorStats, CategoricalFactorStats]] = None
-    significance: Optional[FactorSignificance] = None
-    score_test: Optional[ScoreTestResult] = None
-    relative_importance: Optional[float] = None
+    univariate: ContinuousFactorStats | CategoricalFactorStats | None = None
+    significance: FactorSignificance | None = None
+    score_test: ScoreTestResult | None = None
+    relative_importance: float | None = None
 
 
 # =============================================================================
 # Interaction and VIF
 # =============================================================================
 
+
 @dataclass
 class InteractionCandidate:
     """A potential interaction between two factors."""
+
     factor1: str
     factor2: str
     interaction_strength: float
     pvalue: float
     n_cells: int
-    current_terms: Optional[List[str]] = None
-    recommendation: Optional[str] = None
+    current_terms: list[str] | None = None
+    recommendation: str | None = None
 
 
 @dataclass
 class VIFResult:
     """Variance Inflation Factor for a design matrix column."""
+
     feature: str
     vif: float
     severity: str  # "none", "moderate", "severe", "expected"
-    collinear_with: Optional[List[str]] = None
+    collinear_with: list[str] | None = None
 
 
 # =============================================================================
 # Coefficient and Deviance
 # =============================================================================
 
+
 @dataclass
 class CoefficientSummary:
     """Summary of a coefficient for interpretation."""
+
     feature: str
     estimate: float
     std_error: float
     z_value: float
     p_value: float
     significant: bool
-    relativity: Optional[float]
-    relativity_ci: Optional[List[float]]
+    relativity: float | None
+    relativity_ci: list[float] | None
 
 
 @dataclass
 class DevianceByLevel:
     """Deviance contribution for a factor level."""
+
     level: str
     n: int
     deviance: float
@@ -364,19 +386,22 @@ class DevianceByLevel:
 @dataclass
 class FactorDeviance:
     """Deviance breakdown by factor levels."""
+
     factor: str
     total_deviance: float
-    levels: List[DevianceByLevel]
-    problem_levels: List[str]
+    levels: list[DevianceByLevel]
+    problem_levels: list[str]
 
 
 # =============================================================================
 # Lift and Calibration
 # =============================================================================
 
+
 @dataclass
 class LiftDecile:
     """Lift statistics for a single decile."""
+
     decile: int
     n: int
     exposure: float
@@ -392,21 +417,23 @@ class LiftDecile:
 @dataclass
 class LiftChart:
     """Full lift chart with all deciles."""
-    deciles: List[LiftDecile]
+
+    deciles: list[LiftDecile]
     gini: float
     ks_statistic: float
     ks_decile: int
-    weak_deciles: List[int]
+    weak_deciles: list[int]
 
 
 @dataclass
 class PartialDependence:
     """Partial dependence for a variable."""
+
     variable: str
     variable_type: str
-    grid_values: List[Any]
-    predictions: List[float]
-    relativities: Optional[List[float]]
+    grid_values: list[Any]
+    predictions: list[float]
+    relativities: list[float] | None
     shape: str
     recommendation: str
 
@@ -414,6 +441,7 @@ class PartialDependence:
 @dataclass
 class DecileMetrics:
     """Metrics for a single decile in calibration analysis."""
+
     decile: int
     n: int
     exposure: float
@@ -425,6 +453,7 @@ class DecileMetrics:
 @dataclass
 class FactorLevelMetrics:
     """Metrics for a single factor level."""
+
     level: str
     n: int
     exposure: float
@@ -437,6 +466,7 @@ class FactorLevelMetrics:
 @dataclass
 class ContinuousBandMetrics:
     """Metrics for a continuous variable band."""
+
     band: int
     range_min: float
     range_max: float
@@ -454,9 +484,11 @@ class ContinuousBandMetrics:
 # Dataset Diagnostics
 # =============================================================================
 
+
 @dataclass
 class DatasetDiagnostics:
     """Comprehensive diagnostics for a single dataset (train or test)."""
+
     dataset: str
     n_obs: int
     total_exposure: float
@@ -469,28 +501,30 @@ class DatasetDiagnostics:
     gini: float
     auc: float
     ae_ratio: float
-    ae_by_decile: List[DecileMetrics]
-    factor_diagnostics: Dict[str, List[FactorLevelMetrics]]
-    continuous_diagnostics: Dict[str, List[ContinuousBandMetrics]]
+    ae_by_decile: list[DecileMetrics]
+    factor_diagnostics: dict[str, list[FactorLevelMetrics]]
+    continuous_diagnostics: dict[str, list[ContinuousBandMetrics]]
 
 
 @dataclass
 class TrainTestComparison:
     """Train metrics and optional test comparison."""
+
     train: DatasetDiagnostics
-    test: Optional[DatasetDiagnostics] = None
-    gini_gap: Optional[float] = None
-    ae_ratio_diff: Optional[float] = None
-    decile_comparison: Optional[List[Dict[str, Any]]] = None
-    factor_divergence: Optional[Dict[str, List[Dict[str, Any]]]] = None
+    test: DatasetDiagnostics | None = None
+    gini_gap: float | None = None
+    ae_ratio_diff: float | None = None
+    decile_comparison: list[dict[str, Any]] | None = None
+    factor_divergence: dict[str, list[dict[str, Any]]] | None = None
     overfitting_risk: bool = False
     calibration_drift: bool = False
-    unstable_factors: List[str] = field(default_factory=list)
+    unstable_factors: list[str] = field(default_factory=list)
 
 
 @dataclass
 class ConvergenceDetails:
     """Details about model convergence."""
+
     max_iterations_allowed: int
     iterations_used: int
     converged: bool
@@ -501,9 +535,11 @@ class ConvergenceDetails:
 # Smooth Terms
 # =============================================================================
 
+
 @dataclass
 class SmoothTermDiagnostics:
     """Diagnostics for a smooth term (penalized spline)."""
+
     variable: str
     k: int
     edf: float
@@ -512,8 +548,8 @@ class SmoothTermDiagnostics:
     ref_df: float
     chi2: float
     p_value: float
-    
-    def to_dict(self) -> Dict[str, Any]:
+
+    def to_dict(self) -> dict[str, Any]:
         return {
             "variable": self.variable,
             "k": self.k,
@@ -530,9 +566,11 @@ class SmoothTermDiagnostics:
 # Base Predictions Comparison
 # =============================================================================
 
+
 @dataclass
 class ModelVsBaseDecile:
     """Metrics for comparing model vs base predictions by decile."""
+
     decile: int
     n: int
     exposure: float
@@ -547,6 +585,7 @@ class ModelVsBaseDecile:
 @dataclass
 class BasePredictionsMetrics:
     """Metrics for base predictions."""
+
     total_predicted: float
     ae_ratio: float
     loss: float
@@ -557,9 +596,10 @@ class BasePredictionsMetrics:
 @dataclass
 class BasePredictionsComparison:
     """Comparison between model predictions and base predictions."""
+
     model_metrics: BasePredictionsMetrics
     base_metrics: BasePredictionsMetrics
-    model_vs_base_deciles: List[ModelVsBaseDecile]
+    model_vs_base_deciles: list[ModelVsBaseDecile]
     model_better_deciles: int
     base_better_deciles: int
     loss_improvement_pct: float
@@ -571,25 +611,27 @@ class BasePredictionsComparison:
 # Data Exploration
 # =============================================================================
 
+
 @dataclass
 class DataExploration:
     """Pre-fit data exploration results."""
-    data_summary: Dict[str, Any]
-    factor_stats: List[Dict[str, Any]]
-    missing_values: Dict[str, Any]
-    univariate_tests: List[Dict[str, Any]]
-    correlations: Dict[str, Any]
-    cramers_v: Dict[str, Any]
-    vif: List[Dict[str, Any]]
-    zero_inflation: Dict[str, Any]
-    overdispersion: Dict[str, Any]
-    interaction_candidates: List[InteractionCandidate]
-    response_stats: Dict[str, Any]
-    
-    def to_dict(self) -> Dict[str, Any]:
+
+    data_summary: dict[str, Any]
+    factor_stats: list[dict[str, Any]]
+    missing_values: dict[str, Any]
+    univariate_tests: list[dict[str, Any]]
+    correlations: dict[str, Any]
+    cramers_v: dict[str, Any]
+    vif: list[dict[str, Any]]
+    zero_inflation: dict[str, Any]
+    overdispersion: dict[str, Any]
+    interaction_candidates: list[InteractionCandidate]
+    response_stats: dict[str, Any]
+
+    def to_dict(self) -> dict[str, Any]:
         return _to_dict_recursive(self)
-    
-    def to_json(self, indent: Optional[int] = None) -> str:
+
+    def to_json(self, indent: int | None = None) -> str:
         return json.dumps(self.to_dict(), indent=indent, default=_json_default)
 
 
@@ -597,29 +639,31 @@ class DataExploration:
 # Main Diagnostics Output
 # =============================================================================
 
+
 @dataclass
 class ModelDiagnostics:
     """Complete model diagnostics output."""
-    model_summary: Dict[str, Any]
+
+    model_summary: dict[str, Any]
     train_test: TrainTestComparison
-    calibration: Dict[str, Any]
-    residual_summary: Dict[str, ResidualSummary]
-    factors: List[FactorDiagnostics]
-    interaction_candidates: List[InteractionCandidate]
-    model_comparison: Dict[str, float]
-    warnings: List[Dict[str, str]]
-    vif: Optional[List[VIFResult]] = None
-    smooth_terms: Optional[List[SmoothTermDiagnostics]] = None
-    coefficient_summary: Optional[List[CoefficientSummary]] = None
-    factor_deviance: Optional[List[FactorDeviance]] = None
-    lift_chart: Optional[LiftChart] = None
-    partial_dependence: Optional[List[PartialDependence]] = None
-    overdispersion: Optional[Dict[str, Any]] = None
-    spline_info: Optional[Dict[str, Dict[str, Any]]] = None
-    base_predictions_comparison: Optional[BasePredictionsComparison] = None
-    
-    def to_dict(self) -> Dict[str, Any]:
+    calibration: dict[str, Any]
+    residual_summary: dict[str, ResidualSummary]
+    factors: list[FactorDiagnostics]
+    interaction_candidates: list[InteractionCandidate]
+    model_comparison: dict[str, float]
+    warnings: list[dict[str, str]]
+    vif: list[VIFResult] | None = None
+    smooth_terms: list[SmoothTermDiagnostics] | None = None
+    coefficient_summary: list[CoefficientSummary] | None = None
+    factor_deviance: list[FactorDeviance] | None = None
+    lift_chart: LiftChart | None = None
+    partial_dependence: list[PartialDependence] | None = None
+    overdispersion: dict[str, Any] | None = None
+    spline_info: dict[str, dict[str, Any]] | None = None
+    base_predictions_comparison: BasePredictionsComparison | None = None
+
+    def to_dict(self) -> dict[str, Any]:
         return _to_dict_recursive(self)
-    
-    def to_json(self, indent: Optional[int] = None) -> str:
+
+    def to_json(self, indent: int | None = None) -> str:
         return json.dumps(self.to_dict(), indent=indent, default=_json_default)

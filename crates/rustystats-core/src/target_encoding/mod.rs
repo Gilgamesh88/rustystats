@@ -125,47 +125,54 @@ pub fn target_encode(
     config: &TargetEncodingConfig,
 ) -> TargetEncoding {
     let n = categories.len();
-    assert_eq!(n, target.len(), "categories and target must have same length");
-    
+    assert_eq!(
+        n,
+        target.len(),
+        "categories and target must have same length"
+    );
+
     // Compute global prior (mean of target)
     let prior: f64 = target.iter().sum::<f64>() / n as f64;
-    
+
     // Get unique levels
-    let mut levels: Vec<String> = categories.iter().cloned().collect();
+    let mut levels: Vec<String> = categories.to_vec();
     levels.sort();
     levels.dedup();
-    
+
     // Create level-to-index mapping
     let level_map: HashMap<&str, usize> = levels
         .iter()
         .enumerate()
         .map(|(i, s)| (s.as_str(), i))
         .collect();
-    
+
     // Convert categories to indices
     let cat_indices: Vec<usize> = categories
         .iter()
         .map(|c| *level_map.get(c.as_str()).unwrap_or(&0))
         .collect();
-    
+
     // Compute full statistics for each level (for prediction)
     let mut level_stats = HashMap::new();
     let mut sum_by_level = vec![0.0; levels.len()];
     let mut count_by_level = vec![0usize; levels.len()];
-    
+
     for i in 0..n {
         let idx = cat_indices[i];
         sum_by_level[idx] += target[i];
         count_by_level[idx] += 1;
     }
-    
+
     for (i, level) in levels.iter().enumerate() {
-        level_stats.insert(level.clone(), LevelStatistics {
-            sum_target: sum_by_level[i],
-            count: count_by_level[i],
-        });
+        level_stats.insert(
+            level.clone(),
+            LevelStatistics {
+                sum_target: sum_by_level[i],
+                count: count_by_level[i],
+            },
+        );
     }
-    
+
     // Compute ordered target statistics with multiple permutations
     let encoded_values = if config.n_permutations > 1 {
         // Average over multiple permutations (parallel)
@@ -183,7 +190,7 @@ pub fn target_encode(
                 )
             })
             .collect();
-        
+
         // Average the results
         let mut averaged = vec![0.0; n];
         for i in 0..n {
@@ -201,7 +208,7 @@ pub fn target_encode(
             config.seed,
         )
     };
-    
+
     TargetEncoding {
         values: Array1::from_vec(encoded_values),
         name: format!("TE({})", var_name),
@@ -221,39 +228,39 @@ fn compute_ordered_target_stats(
     seed: Option<u64>,
 ) -> Vec<f64> {
     let n = cat_indices.len();
-    
+
     // Generate random permutation
     let permutation = generate_permutation(n, seed);
-    
+
     // Track running statistics for each level
     let mut sum_by_level = vec![0.0; n_levels];
     let mut count_by_level = vec![0usize; n_levels];
-    
+
     // Compute encoded values in permutation order
     let mut encoded = vec![0.0; n];
-    
+
     for &perm_idx in &permutation {
         let cat_idx = cat_indices[perm_idx];
-        
+
         // Encode using ONLY observations seen so far (before current in permutation)
         let sum_before = sum_by_level[cat_idx];
         let count_before = count_by_level[cat_idx];
-        
-        encoded[perm_idx] = (sum_before + prior * prior_weight) / (count_before as f64 + prior_weight);
-        
+
+        encoded[perm_idx] =
+            (sum_before + prior * prior_weight) / (count_before as f64 + prior_weight);
+
         // Update running statistics with current observation
         sum_by_level[cat_idx] += target[perm_idx];
         count_by_level[cat_idx] += 1;
     }
-    
+
     encoded
 }
 
 /// Generate a random permutation of indices [0, n).
 fn generate_permutation(n: usize, seed: Option<u64>) -> Vec<usize> {
-    
     let mut indices: Vec<usize> = (0..n).collect();
-    
+
     // Simple LCG-based shuffle (deterministic if seed provided)
     let mut state: u64 = seed.unwrap_or_else(|| {
         // Use system time for random seed
@@ -262,15 +269,17 @@ fn generate_permutation(n: usize, seed: Option<u64>) -> Vec<usize> {
             .map(|d| d.as_nanos() as u64)
             .unwrap_or(42)
     });
-    
+
     // Fisher-Yates shuffle
     for i in (1..n).rev() {
         // LCG: state = (a * state + c) mod m
-        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         let j = (state as usize) % (i + 1);
         indices.swap(i, j);
     }
-    
+
     indices
 }
 
@@ -312,50 +321,61 @@ pub fn target_encode_with_exposure(
     config: &TargetEncodingConfig,
 ) -> ExposureWeightedTargetEncoding {
     let n = categories.len();
-    assert_eq!(n, claims.len(), "categories and claims must have same length");
-    assert_eq!(n, exposure.len(), "categories and exposure must have same length");
-    
+    assert_eq!(
+        n,
+        claims.len(),
+        "categories and claims must have same length"
+    );
+    assert_eq!(
+        n,
+        exposure.len(),
+        "categories and exposure must have same length"
+    );
+
     // Compute global prior (total claims / total exposure)
     let total_claims: f64 = claims.iter().sum();
     let total_exposure: f64 = exposure.iter().sum();
     let prior = total_claims / total_exposure.max(1e-10);
-    
+
     // Get unique levels
-    let mut levels: Vec<String> = categories.iter().cloned().collect();
+    let mut levels: Vec<String> = categories.to_vec();
     levels.sort();
     levels.dedup();
-    
+
     // Create level-to-index mapping
     let level_map: HashMap<&str, usize> = levels
         .iter()
         .enumerate()
         .map(|(i, s)| (s.as_str(), i))
         .collect();
-    
+
     // Convert categories to indices
     let cat_indices: Vec<usize> = categories
         .iter()
         .map(|c| *level_map.get(c.as_str()).unwrap_or(&0))
         .collect();
-    
+
     // Compute full statistics for each level (for prediction)
     let mut level_stats = HashMap::new();
     let mut claims_by_level = vec![0.0; levels.len()];
     let mut exposure_by_level = vec![0.0; levels.len()];
-    
+
     for i in 0..n {
         let idx = cat_indices[i];
         claims_by_level[idx] += claims[i];
         exposure_by_level[idx] += exposure[i];
     }
-    
+
     for (i, level) in levels.iter().enumerate() {
-        level_stats.insert(level.clone(), ExposureWeightedLevelStatistics {
-            sum_claims: claims_by_level[i],
-            sum_exposure: exposure_by_level[i],
-        });
+        level_stats.insert(
+            level.clone(),
+            ExposureWeightedLevelStatistics {
+                sum_claims: claims_by_level[i],
+                sum_exposure: exposure_by_level[i],
+            },
+        );
     }
-    
+
     // Compute ordered target statistics with multiple permutations
     let encoded_values = if config.n_permutations > 1 {
         // Average over multiple permutations (parallel)
@@ -374,7 +394,7 @@ pub fn target_encode_with_exposure(
                 )
             })
             .collect();
-        
+
         // Average the results
         let mut averaged = vec![0.0; n];
         for i in 0..n {
@@ -393,7 +413,7 @@ pub fn target_encode_with_exposure(
             config.seed,
         )
     };
-    
+
     ExposureWeightedTargetEncoding {
         values: Array1::from_vec(encoded_values),
         name: format!("TE({})", var_name),
@@ -414,32 +434,33 @@ fn compute_ordered_exposure_weighted_stats(
     seed: Option<u64>,
 ) -> Vec<f64> {
     let n = cat_indices.len();
-    
+
     // Generate random permutation
     let permutation = generate_permutation(n, seed);
-    
+
     // Track running statistics for each level (claims and exposure)
     let mut claims_by_level = vec![0.0; n_levels];
     let mut exposure_by_level = vec![0.0; n_levels];
-    
+
     // Compute encoded values in permutation order
     let mut encoded = vec![0.0; n];
-    
+
     for &perm_idx in &permutation {
         let cat_idx = cat_indices[perm_idx];
-        
+
         // Encode using ONLY observations seen so far (before current in permutation)
         let claims_before = claims_by_level[cat_idx];
         let exposure_before = exposure_by_level[cat_idx];
-        
+
         // Exposure-weighted encoding: (sum_claims + prior * prior_weight) / (sum_exposure + prior_weight)
-        encoded[perm_idx] = (claims_before + prior * prior_weight) / (exposure_before + prior_weight);
-        
+        encoded[perm_idx] =
+            (claims_before + prior * prior_weight) / (exposure_before + prior_weight);
+
         // Update running statistics with current observation
         claims_by_level[cat_idx] += claims[perm_idx];
         exposure_by_level[cat_idx] += exposure[perm_idx];
     }
-    
+
     encoded
 }
 
@@ -461,7 +482,7 @@ pub fn apply_exposure_weighted_target_encoding(
 ) -> Array1<f64> {
     let n = categories.len();
     let mut values = Vec::with_capacity(n);
-    
+
     for cat in categories {
         let encoded = if let Some(stats) = encoding.level_stats.get(cat) {
             stats.encode(encoding.prior, prior_weight)
@@ -471,7 +492,7 @@ pub fn apply_exposure_weighted_target_encoding(
         };
         values.push(encoded);
     }
-    
+
     Array1::from_vec(values)
 }
 
@@ -493,7 +514,7 @@ pub fn apply_target_encoding(
 ) -> Array1<f64> {
     let n = categories.len();
     let mut values = Vec::with_capacity(n);
-    
+
     for cat in categories {
         let encoded = if let Some(stats) = encoding.level_stats.get(cat) {
             stats.encode(encoding.prior, prior_weight)
@@ -503,7 +524,7 @@ pub fn apply_target_encoding(
         };
         values.push(encoded);
     }
-    
+
     Array1::from_vec(values)
 }
 
@@ -545,25 +566,22 @@ pub struct FrequencyEncoding {
 ///
 /// # Returns
 /// FrequencyEncoding with encoded values and statistics for prediction
-pub fn frequency_encode(
-    categories: &[String],
-    var_name: &str,
-) -> FrequencyEncoding {
+pub fn frequency_encode(categories: &[String], var_name: &str) -> FrequencyEncoding {
     let n = categories.len();
-    
+
     // Count occurrences of each level
     let mut level_counts: HashMap<String, usize> = HashMap::new();
     for cat in categories {
         *level_counts.entry(cat.clone()).or_insert(0) += 1;
     }
-    
+
     // Find maximum count for normalization
     let max_count = level_counts.values().copied().max().unwrap_or(1);
-    
+
     // Get sorted unique levels
     let mut levels: Vec<String> = level_counts.keys().cloned().collect();
     levels.sort();
-    
+
     // Encode values (parallel for large data)
     let values: Vec<f64> = if n > 10000 {
         categories
@@ -582,7 +600,7 @@ pub fn frequency_encode(
             })
             .collect()
     };
-    
+
     FrequencyEncoding {
         values: Array1::from_vec(values),
         name: format!("FE({})", var_name),
@@ -606,7 +624,7 @@ pub fn apply_frequency_encoding(
     encoding: &FrequencyEncoding,
 ) -> Array1<f64> {
     let max_count = encoding.max_count;
-    
+
     let values: Vec<f64> = categories
         .iter()
         .map(|cat| {
@@ -614,7 +632,7 @@ pub fn apply_frequency_encoding(
             count as f64 / max_count as f64
         })
         .collect();
-    
+
     Array1::from_vec(values)
 }
 
@@ -652,15 +670,19 @@ pub fn target_encode_interaction(
 ) -> TargetEncoding {
     let n = cat1.len();
     assert_eq!(n, cat2.len(), "cat1 and cat2 must have same length");
-    assert_eq!(n, target.len(), "categories and target must have same length");
-    
+    assert_eq!(
+        n,
+        target.len(),
+        "categories and target must have same length"
+    );
+
     // Create combined categories
     let combined: Vec<String> = cat1
         .iter()
         .zip(cat2.iter())
         .map(|(a, b)| format!("{}:{}", a, b))
         .collect();
-    
+
     // Apply standard target encoding to combined categories
     let var_name = format!("{}:{}", var_name1, var_name2);
     target_encode(&combined, target, &var_name, config)
@@ -693,16 +715,24 @@ pub fn target_encode_interaction_with_exposure(
 ) -> ExposureWeightedTargetEncoding {
     let n = cat1.len();
     assert_eq!(n, cat2.len(), "cat1 and cat2 must have same length");
-    assert_eq!(n, claims.len(), "categories and claims must have same length");
-    assert_eq!(n, exposure.len(), "categories and exposure must have same length");
-    
+    assert_eq!(
+        n,
+        claims.len(),
+        "categories and claims must have same length"
+    );
+    assert_eq!(
+        n,
+        exposure.len(),
+        "categories and exposure must have same length"
+    );
+
     // Create combined categories
     let combined: Vec<String> = cat1
         .iter()
         .zip(cat2.iter())
         .map(|(a, b)| format!("{}:{}", a, b))
         .collect();
-    
+
     // Apply exposure-weighted target encoding to combined categories
     let var_name = format!("{}:{}", var_name1, var_name2);
     target_encode_with_exposure(&combined, claims, exposure, &var_name, config)
@@ -728,12 +758,23 @@ pub fn target_encode_multi_interaction(
 ) -> TargetEncoding {
     assert!(!categories.is_empty(), "categories must not be empty");
     let n = categories[0].len();
-    
+
     for (i, cat) in categories.iter().enumerate() {
-        assert_eq!(cat.len(), n, "All category vectors must have same length (vector {} has {} vs {})", i, cat.len(), n);
+        assert_eq!(
+            cat.len(),
+            n,
+            "All category vectors must have same length (vector {} has {} vs {})",
+            i,
+            cat.len(),
+            n
+        );
     }
-    assert_eq!(n, target.len(), "categories and target must have same length");
-    
+    assert_eq!(
+        n,
+        target.len(),
+        "categories and target must have same length"
+    );
+
     // Create combined categories by joining with ":"
     let combined: Vec<String> = (0..n)
         .map(|i| {
@@ -744,7 +785,7 @@ pub fn target_encode_multi_interaction(
                 .join(":")
         })
         .collect();
-    
+
     // Apply standard target encoding
     let var_name = var_names.join(":");
     target_encode(&combined, target, &var_name, config)
@@ -757,7 +798,7 @@ pub fn target_encode_multi_interaction(
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_target_encode_basic() {
         let categories: Vec<String> = vec!["A", "B", "A", "B", "A", "B"]
@@ -765,59 +806,63 @@ mod tests {
             .map(String::from)
             .collect();
         let target = vec![1.0, 0.0, 1.0, 0.0, 1.0, 0.0];
-        
+
         let config = TargetEncodingConfig {
             prior_weight: 1.0,
             n_permutations: 1,
             seed: Some(42),
         };
-        
+
         let enc = target_encode(&categories, &target, "cat", &config);
-        
+
         // Check that we got values
         assert_eq!(enc.values.len(), 6);
         assert_eq!(enc.levels.len(), 2);
         assert_eq!(enc.name, "TE(cat)");
-        
+
         // Prior should be mean of target
         assert!((enc.prior - 0.5).abs() < 1e-10);
-        
+
         // Level statistics should be correct
         assert_eq!(enc.level_stats["A"].count, 3);
         assert_eq!(enc.level_stats["B"].count, 3);
         assert!((enc.level_stats["A"].sum_target - 3.0).abs() < 1e-10);
         assert!((enc.level_stats["B"].sum_target - 0.0).abs() < 1e-10);
     }
-    
+
     #[test]
     fn test_target_encode_prevents_leakage() {
         // Create perfect predictor scenario (each category is unique)
-        let categories: Vec<String> = (0..10)
-            .map(|i| format!("cat_{}", i))
+        let categories: Vec<String> = (0..10).map(|i| format!("cat_{}", i)).collect();
+        let target: Vec<f64> = (0..10)
+            .map(|i| if i % 2 == 0 { 1.0 } else { 0.0 })
             .collect();
-        let target: Vec<f64> = (0..10).map(|i| if i % 2 == 0 { 1.0 } else { 0.0 }).collect();
-        
+
         let config = TargetEncodingConfig {
             prior_weight: 1.0,
             n_permutations: 1,
             seed: Some(42),
         };
-        
+
         let enc = target_encode(&categories, &target, "cat", &config);
-        
+
         // With ordered statistics, first observation of each unique category
         // should get only the prior (no data seen yet for that category)
         // So encoded values should NOT perfectly predict target
-        
+
         // All first observations should get the prior
         let prior = enc.prior;
         for i in 0..10 {
             // Each category is unique, so each gets (0 + prior*1) / (0 + 1) = prior
-            assert!((enc.values[i] - prior).abs() < 1e-10, 
-                "Unique category should get prior, got {} vs {}", enc.values[i], prior);
+            assert!(
+                (enc.values[i] - prior).abs() < 1e-10,
+                "Unique category should get prior, got {} vs {}",
+                enc.values[i],
+                prior
+            );
         }
     }
-    
+
     #[test]
     fn test_target_encode_multiple_permutations() {
         let categories: Vec<String> = vec!["A", "B", "A", "B", "A", "B", "A", "B"]
@@ -825,20 +870,20 @@ mod tests {
             .map(String::from)
             .collect();
         let target = vec![1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0];
-        
+
         let config = TargetEncodingConfig {
             prior_weight: 1.0,
             n_permutations: 10,
             seed: Some(42),
         };
-        
+
         let enc = target_encode(&categories, &target, "cat", &config);
-        
+
         // With multiple permutations, variance should be reduced
         // Values for same category should be more similar
         assert_eq!(enc.values.len(), 8);
     }
-    
+
     #[test]
     fn test_apply_target_encoding() {
         let categories: Vec<String> = vec!["A", "B", "A", "B"]
@@ -846,30 +891,28 @@ mod tests {
             .map(String::from)
             .collect();
         let target = vec![1.0, 0.0, 1.0, 0.0];
-        
+
         let config = TargetEncodingConfig::default();
         let enc = target_encode(&categories, &target, "cat", &config);
-        
+
         // Apply to new data
-        let new_categories: Vec<String> = vec!["A", "B", "C"]
-            .into_iter()
-            .map(String::from)
-            .collect();
-        
+        let new_categories: Vec<String> =
+            vec!["A", "B", "C"].into_iter().map(String::from).collect();
+
         let new_encoded = apply_target_encoding(&new_categories, &enc, 1.0);
-        
+
         assert_eq!(new_encoded.len(), 3);
-        
+
         // A: (2.0 + 0.5*1) / (2 + 1) = 2.5/3 ≈ 0.833
-        assert!((new_encoded[0] - 2.5/3.0).abs() < 1e-10);
-        
+        assert!((new_encoded[0] - 2.5 / 3.0).abs() < 1e-10);
+
         // B: (0.0 + 0.5*1) / (2 + 1) = 0.5/3 ≈ 0.167
-        assert!((new_encoded[1] - 0.5/3.0).abs() < 1e-10);
-        
+        assert!((new_encoded[1] - 0.5 / 3.0).abs() < 1e-10);
+
         // C: unseen category, gets prior = 0.5
         assert!((new_encoded[2] - 0.5).abs() < 1e-10);
     }
-    
+
     #[test]
     fn test_deterministic_with_seed() {
         let categories: Vec<String> = vec!["A", "B", "C", "A", "B", "C"]
@@ -877,101 +920,98 @@ mod tests {
             .map(String::from)
             .collect();
         let target = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
-        
+
         let config = TargetEncodingConfig {
             prior_weight: 1.0,
             n_permutations: 4,
             seed: Some(12345),
         };
-        
+
         let enc1 = target_encode(&categories, &target, "cat", &config);
         let enc2 = target_encode(&categories, &target, "cat", &config);
-        
+
         // Should be identical with same seed
         for i in 0..6 {
             assert!((enc1.values[i] - enc2.values[i]).abs() < 1e-10);
         }
     }
-    
+
     // =========================================================================
     // Frequency Encoding Tests
     // =========================================================================
-    
+
     #[test]
     fn test_frequency_encode_basic() {
         let categories: Vec<String> = vec!["A", "B", "A", "A", "B", "C"]
             .into_iter()
             .map(String::from)
             .collect();
-        
+
         let enc = frequency_encode(&categories, "cat");
-        
+
         // Check structure
         assert_eq!(enc.values.len(), 6);
         assert_eq!(enc.name, "FE(cat)");
         assert_eq!(enc.levels.len(), 3);
-        assert_eq!(enc.max_count, 3);  // A appears 3 times
-        
+        assert_eq!(enc.max_count, 3); // A appears 3 times
+
         // Check counts
         assert_eq!(enc.level_counts["A"], 3);
         assert_eq!(enc.level_counts["B"], 2);
         assert_eq!(enc.level_counts["C"], 1);
-        
+
         // Check encoded values: count / max_count
         // A=3, B=2, C=1, max=3
         // [A, B, A, A, B, C] -> [3/3, 2/3, 3/3, 3/3, 2/3, 1/3]
-        assert!((enc.values[0] - 1.0).abs() < 1e-10);      // A: 3/3
-        assert!((enc.values[1] - 2.0/3.0).abs() < 1e-10);  // B: 2/3
-        assert!((enc.values[2] - 1.0).abs() < 1e-10);      // A: 3/3
-        assert!((enc.values[3] - 1.0).abs() < 1e-10);      // A: 3/3
-        assert!((enc.values[4] - 2.0/3.0).abs() < 1e-10);  // B: 2/3
-        assert!((enc.values[5] - 1.0/3.0).abs() < 1e-10);  // C: 1/3
+        assert!((enc.values[0] - 1.0).abs() < 1e-10); // A: 3/3
+        assert!((enc.values[1] - 2.0 / 3.0).abs() < 1e-10); // B: 2/3
+        assert!((enc.values[2] - 1.0).abs() < 1e-10); // A: 3/3
+        assert!((enc.values[3] - 1.0).abs() < 1e-10); // A: 3/3
+        assert!((enc.values[4] - 2.0 / 3.0).abs() < 1e-10); // B: 2/3
+        assert!((enc.values[5] - 1.0 / 3.0).abs() < 1e-10); // C: 1/3
     }
-    
+
     #[test]
     fn test_apply_frequency_encoding() {
         let categories: Vec<String> = vec!["A", "B", "A", "A"]
             .into_iter()
             .map(String::from)
             .collect();
-        
+
         let enc = frequency_encode(&categories, "cat");
-        
+
         // Apply to new data including unseen category
         let new_categories: Vec<String> = vec!["A", "B", "C", "D"]
             .into_iter()
             .map(String::from)
             .collect();
-        
+
         let new_encoded = apply_frequency_encoding(&new_categories, &enc);
-        
+
         assert_eq!(new_encoded.len(), 4);
-        assert!((new_encoded[0] - 1.0).abs() < 1e-10);      // A: 3/3
-        assert!((new_encoded[1] - 1.0/3.0).abs() < 1e-10);  // B: 1/3
-        assert!((new_encoded[2] - 0.0).abs() < 1e-10);      // C: unseen -> 0
-        assert!((new_encoded[3] - 0.0).abs() < 1e-10);      // D: unseen -> 0
+        assert!((new_encoded[0] - 1.0).abs() < 1e-10); // A: 3/3
+        assert!((new_encoded[1] - 1.0 / 3.0).abs() < 1e-10); // B: 1/3
+        assert!((new_encoded[2] - 0.0).abs() < 1e-10); // C: unseen -> 0
+        assert!((new_encoded[3] - 0.0).abs() < 1e-10); // D: unseen -> 0
     }
-    
+
     #[test]
     fn test_frequency_encode_single_category() {
-        let categories: Vec<String> = vec!["X", "X", "X"]
-            .into_iter()
-            .map(String::from)
-            .collect();
-        
+        let categories: Vec<String> = vec!["X", "X", "X"].into_iter().map(String::from).collect();
+
         let enc = frequency_encode(&categories, "cat");
-        
+
         // All should be 1.0 (max count = only count)
         assert_eq!(enc.max_count, 3);
         for i in 0..3 {
             assert!((enc.values[i] - 1.0).abs() < 1e-10);
         }
     }
-    
+
     // =========================================================================
     // Target Encoding Interaction Tests
     // =========================================================================
-    
+
     #[test]
     fn test_target_encode_interaction_basic() {
         let cat1: Vec<String> = vec!["A", "A", "B", "B"]
@@ -983,26 +1023,26 @@ mod tests {
             .map(String::from)
             .collect();
         let target = vec![1.0, 2.0, 3.0, 4.0];
-        
+
         let config = TargetEncodingConfig {
             prior_weight: 1.0,
             n_permutations: 1,
             seed: Some(42),
         };
-        
+
         let enc = target_encode_interaction(&cat1, &cat2, &target, "c1", "c2", &config);
-        
+
         // Check structure
         assert_eq!(enc.values.len(), 4);
         assert_eq!(enc.name, "TE(c1:c2)");
-        
+
         // Should have 4 unique combinations: A:X, A:Y, B:X, B:Y
         assert_eq!(enc.levels.len(), 4);
-        
+
         // Check that prior is correct (mean of target)
         assert!((enc.prior - 2.5).abs() < 1e-10);
     }
-    
+
     #[test]
     fn test_target_encode_interaction_repeated_combinations() {
         let cat1: Vec<String> = vec!["A", "A", "A", "B", "B", "B"]
@@ -1014,26 +1054,26 @@ mod tests {
             .map(String::from)
             .collect();
         let target = vec![1.0, 1.0, 0.0, 1.0, 0.0, 0.0];
-        
+
         let config = TargetEncodingConfig {
             prior_weight: 1.0,
             n_permutations: 4,
             seed: Some(42),
         };
-        
+
         let enc = target_encode_interaction(&cat1, &cat2, &target, "c1", "c2", &config);
-        
+
         // Check that level stats reflect combined categories
         assert!(enc.level_stats.contains_key("A:X"));
         assert!(enc.level_stats.contains_key("A:Y"));
         assert!(enc.level_stats.contains_key("B:X"));
         assert!(enc.level_stats.contains_key("B:Y"));
-        
+
         // A:X appears twice with sum=2.0
         assert_eq!(enc.level_stats["A:X"].count, 2);
         assert!((enc.level_stats["A:X"].sum_target - 2.0).abs() < 1e-10);
     }
-    
+
     #[test]
     fn test_target_encode_multi_interaction() {
         let cat1: Vec<String> = vec!["A", "A", "B", "B"]
@@ -1049,20 +1089,20 @@ mod tests {
             .map(String::from)
             .collect();
         let target = vec![1.0, 2.0, 3.0, 4.0];
-        
+
         let config = TargetEncodingConfig::default();
-        
+
         let enc = target_encode_multi_interaction(
             &[cat1, cat2, cat3],
             &target,
             &["c1", "c2", "c3"],
             &config,
         );
-        
+
         // Check structure
         assert_eq!(enc.values.len(), 4);
         assert_eq!(enc.name, "TE(c1:c2:c3)");
-        
+
         // Should have 4 unique three-way combinations
         assert_eq!(enc.levels.len(), 4);
         assert!(enc.levels.contains(&"A:X:1".to_string()));

@@ -21,16 +21,15 @@ dependencies beyond numpy are required.
 from __future__ import annotations
 
 import json
-import re
-import numpy as np
 from collections import OrderedDict, defaultdict
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+
+import numpy as np
 
 if TYPE_CHECKING:
     from rustystats.formula import GLMModel
 
 from rustystats.export_pmml import _classify_feature
-
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -38,28 +37,28 @@ from rustystats.export_pmml import _classify_feature
 def _inverse_link_name(link: str) -> str:
     """Map RustyStats link name to a description for metadata."""
     return {
-        'log': 'exp',
-        'logit': 'sigmoid',
-        'identity': 'identity',
-        'inverse': '1/x',
-        'sqrt': 'square',
-        'cloglog': 'cloglog_inv',
-        'probit': 'probit_inv',
+        "log": "exp",
+        "logit": "sigmoid",
+        "identity": "identity",
+        "inverse": "1/x",
+        "sqrt": "square",
+        "cloglog": "cloglog_inv",
+        "probit": "probit_inv",
     }.get(link, link)
 
 
-def _get_builder_attr(model: "GLMModel", attr: str, default=None):
-    builder = getattr(model, '_builder', None)
+def _get_builder_attr(model: GLMModel, attr: str, default=None):
+    builder = getattr(model, "_builder", None)
     if builder is None:
         return default
     return getattr(builder, attr, default)
 
 
-def _get_all_levels(model: "GLMModel", var: str) -> List[str]:
-    builder = getattr(model, '_builder', None)
+def _get_all_levels(model: GLMModel, var: str) -> list[str]:
+    builder = getattr(model, "_builder", None)
     if builder is None:
         return []
-    cache = getattr(builder, '_cat_encoding_cache', {})
+    cache = getattr(builder, "_cat_encoding_cache", {})
     cached = cache.get(f"{var}_True")
     if cached is not None:
         return list(cached.levels)
@@ -68,7 +67,8 @@ def _get_all_levels(model: "GLMModel", var: str) -> List[str]:
 
 # ── Level 1: scoring mode ───────────────────────────────────────────────────
 
-def _build_scoring_model(model: "GLMModel") -> bytes:
+
+def _build_scoring_model(model: GLMModel) -> bytes:
     """Build a Level-1 ONNX model: design matrix -> prediction.
 
     Uses the Rust protobuf serializer directly.
@@ -82,7 +82,7 @@ def _build_scoring_model(model: "GLMModel") -> bytes:
     intercept = 0.0
     coef_indices = []
     for i, nm in enumerate(names):
-        if nm == 'Intercept':
+        if nm == "Intercept":
             intercept = float(params[i])
         else:
             coef_indices.append(i)
@@ -92,26 +92,33 @@ def _build_scoring_model(model: "GLMModel") -> bytes:
 
     # Metadata
     meta_keys = [
-        'feature_names',
-        'inverse_link',
-        'family',
-        'formula',
+        "feature_names",
+        "inverse_link",
+        "family",
+        "formula",
     ]
     meta_values = [
         json.dumps([names[i] for i in coef_indices]),
         _inverse_link_name(model.link),
         model.family,
-        getattr(model, 'formula', '') or '',
+        getattr(model, "formula", "") or "",
     ]
 
-    return bytes(build_onnx_glm_scoring_py(
-        coefs, intercept, n_features,
-        model.link, model.family,
-        meta_keys, meta_values,
-    ))
+    return bytes(
+        build_onnx_glm_scoring_py(
+            coefs,
+            intercept,
+            n_features,
+            model.link,
+            model.family,
+            meta_keys,
+            meta_values,
+        )
+    )
 
 
 # ── Level 2: full preprocessing mode ────────────────────────────────────────
+
 
 class _GraphAccumulator:
     """Accumulate ONNX graph components as plain Python lists.
@@ -124,32 +131,37 @@ class _GraphAccumulator:
     def __init__(self):
         self._cnt = 0
         # Nodes
-        self.node_ops: List[str] = []
-        self.node_inputs: List[List[str]] = []
-        self.node_outputs: List[List[str]] = []
-        self.node_attr_names: List[List[str]] = []
-        self.node_attr_types: List[List[str]] = []
-        self.node_attr_ints: List[List[int]] = []
-        self.node_attr_floats: List[List[float]] = []
+        self.node_ops: list[str] = []
+        self.node_inputs: list[list[str]] = []
+        self.node_outputs: list[list[str]] = []
+        self.node_attr_names: list[list[str]] = []
+        self.node_attr_types: list[list[str]] = []
+        self.node_attr_ints: list[list[int]] = []
+        self.node_attr_floats: list[list[float]] = []
         # Initializers
-        self.init_names_f64: List[str] = []
-        self.init_data_f64: List[List[float]] = []
-        self.init_shapes_f64: List[List[int]] = []
-        self.init_names_i64: List[str] = []
-        self.init_data_i64: List[List[int]] = []
-        self.init_shapes_i64: List[List[int]] = []
+        self.init_names_f64: list[str] = []
+        self.init_data_f64: list[list[float]] = []
+        self.init_shapes_f64: list[list[int]] = []
+        self.init_names_i64: list[str] = []
+        self.init_data_i64: list[list[int]] = []
+        self.init_shapes_i64: list[list[int]] = []
 
     def uid(self, prefix: str = "t") -> str:
         self._cnt += 1
         return f"{prefix}_{self._cnt}"
 
-    def add_node(self, op: str, inputs: List[str], outputs: List[str],
-                 attrs: Optional[List[Tuple[str, str, Any]]] = None):
+    def add_node(
+        self,
+        op: str,
+        inputs: list[str],
+        outputs: list[str],
+        attrs: list[tuple[str, str, Any]] | None = None,
+    ):
         self.node_ops.append(op)
         self.node_inputs.append(list(inputs))
         self.node_outputs.append(list(outputs))
         a_names, a_types, a_ints, a_floats = [], [], [], []
-        for name, atype, val in (attrs or []):
+        for name, atype, val in attrs or []:
             a_names.append(name)
             a_types.append(atype)
             a_ints.append(int(val) if atype == "int" else 0)
@@ -186,8 +198,9 @@ class _GraphAccumulator:
         self.add_node("Slice", [input_name, s, e, a], [out])
 
 
-def _pwl_nodes(g: _GraphAccumulator, input_name: str, x_grid: np.ndarray,
-               effects: np.ndarray, output_name: str):
+def _pwl_nodes(
+    g: _GraphAccumulator, input_name: str, x_grid: np.ndarray, effects: np.ndarray, output_name: str
+):
     """Add piecewise-linear interpolation nodes to *g*.
 
     Given equally-spaced (x_grid, effects), builds nodes that:
@@ -274,7 +287,7 @@ def _pwl_nodes(g: _GraphAccumulator, input_name: str, x_grid: np.ndarray,
     g.add_node("Unsqueeze", [r1, uax], [output_name])
 
 
-def _build_full_model(model: "GLMModel", n_grid_points: int = 200) -> bytes:
+def _build_full_model(model: GLMModel, n_grid_points: int = 200) -> bytes:
     """Build a Level-2 ONNX model with full preprocessing.
 
     The graph takes raw feature values as a single float64 tensor
@@ -295,11 +308,11 @@ def _build_full_model(model: "GLMModel", n_grid_points: int = 200) -> bytes:
         features.append(info)
 
     # Group related columns
-    spline_groups: Dict[str, List[dict]] = defaultdict(list)
-    cat_groups: Dict[str, Dict[str, dict]] = defaultdict(dict)
+    spline_groups: dict[str, list[dict]] = defaultdict(list)
+    cat_groups: dict[str, dict[str, dict]] = defaultdict(dict)
     intercept_coef = 0.0
     input_vars: OrderedDict = OrderedDict()  # var -> {"type": ...}
-    col_outputs: List[str] = []  # tensor names contributing to eta
+    col_outputs: list[str] = []  # tensor names contributing to eta
 
     def reg_cont(v):
         input_vars.setdefault(v, {"type": "continuous"})
@@ -310,23 +323,21 @@ def _build_full_model(model: "GLMModel", n_grid_points: int = 200) -> bytes:
 
     # First pass: group and register
     for feat in features:
-        ft = feat['type']
-        if ft == 'intercept':
-            intercept_coef = feat['coef']
-        elif ft == 'linear':
-            reg_cont(feat['variable'])
-        elif ft == 'categorical':
-            cat_groups[feat['variable']][feat['level']] = feat
-            reg_cat(feat['variable'])
-        elif ft == 'spline':
-            spline_groups[feat['variable']].append(feat)
-            reg_cont(feat['variable'])
-        elif ft == 'te':
-            reg_cat(feat['variable'])
-        elif ft == 'fe':
-            reg_cat(feat['variable'])
-        elif ft == 'constraint':
-            reg_cont(feat['variable'])
+        ft = feat["type"]
+        if ft == "intercept":
+            intercept_coef = feat["coef"]
+        elif ft == "linear":
+            reg_cont(feat["variable"])
+        elif ft == "categorical":
+            cat_groups[feat["variable"]][feat["level"]] = feat
+            reg_cat(feat["variable"])
+        elif ft == "spline":
+            spline_groups[feat["variable"]].append(feat)
+            reg_cont(feat["variable"])
+        elif ft == "te" or ft == "fe":
+            reg_cat(feat["variable"])
+        elif ft == "constraint":
+            reg_cont(feat["variable"])
 
     var_map = list(input_vars.keys())
     input_name = "input"
@@ -335,11 +346,11 @@ def _build_full_model(model: "GLMModel", n_grid_points: int = 200) -> bytes:
 
     # Linear terms
     for feat in features:
-        if feat['type'] not in ('linear', 'constraint'):
+        if feat["type"] not in ("linear", "constraint"):
             continue
-        var = feat['variable']
+        var = feat["variable"]
         col_idx = var_map.index(var)
-        coef = feat['coef']
+        coef = feat["coef"]
         sl = g.uid("sl")
         g.slice_col(input_name, col_idx, sl)
         cn = g.uid("c")
@@ -360,7 +371,7 @@ def _build_full_model(model: "GLMModel", n_grid_points: int = 200) -> bytes:
             feat = level_map.get(level_str)
             if feat is None:
                 continue
-            coef = feat['coef']
+            coef = feat["coef"]
             idx_c = g.uid("li")
             g.add_init_f64(idx_c, np.array([float(li)]))
             eq = g.uid("eq")
@@ -379,15 +390,15 @@ def _build_full_model(model: "GLMModel", n_grid_points: int = 200) -> bytes:
         sl = g.uid("spl")
         g.slice_col(input_name, col_idx, sl)
 
-        fitted_splines = _get_builder_attr(model, '_fitted_splines', {})
+        fitted_splines = _get_builder_attr(model, "_fitted_splines", {})
         spline = fitted_splines.get(var)
         if spline is not None:
             info = spline.get_knot_info()
-            bk = info.get('boundary_knots', [0.0, 1.0])
+            bk = info.get("boundary_knots", [0.0, 1.0])
             x_grid = np.linspace(float(bk[0]), float(bk[1]), n_grid_points)
             basis, _ = spline.transform(x_grid)
-            feats_sorted = sorted(feats, key=lambda f: f['basis_idx'])
-            coefs = np.array([f['coef'] for f in feats_sorted])
+            feats_sorted = sorted(feats, key=lambda f: f["basis_idx"])
+            coefs = np.array([f["coef"] for f in feats_sorted])
             effects = basis @ coefs
             out = g.uid("seff")
             _pwl_nodes(g, sl, x_grid, effects, out)
@@ -396,28 +407,28 @@ def _build_full_model(model: "GLMModel", n_grid_points: int = 200) -> bytes:
             # Fallback: treat as linear
             for feat in feats:
                 cn = g.uid("sc")
-                g.add_init_f64(cn, np.array([feat['coef']]))
+                g.add_init_f64(cn, np.array([feat["coef"]]))
                 out = g.uid("sp")
                 g.add_node("Mul", [sl, cn], [out])
                 col_outputs.append(out)
 
     # Target-encoding terms
     for feat in features:
-        if feat['type'] != 'te':
+        if feat["type"] != "te":
             continue
-        var = feat['variable']
+        var = feat["variable"]
         col_idx = var_map.index(var)
-        coef = feat['coef']
+        coef = feat["coef"]
 
         sl = g.uid("te")
         g.slice_col(input_name, col_idx, sl)
 
-        te_all = _get_builder_attr(model, '_te_stats', {})
+        te_all = _get_builder_attr(model, "_te_stats", {})
         te_info = te_all.get(var, {})
-        prior = te_info.get('prior', 0.0)
-        prior_weight = te_info.get('prior_weight', 1.0)
-        level_stats = te_info.get('stats', {})
-        exposure_weighted = te_info.get('used_exposure_weighted', False)
+        prior = te_info.get("prior", 0.0)
+        prior_weight = te_info.get("prior_weight", 1.0)
+        level_stats = te_info.get("stats", {})
+        exposure_weighted = te_info.get("used_exposure_weighted", False)
         levels = _get_all_levels(model, var)
         if not levels:
             levels = sorted(level_stats.keys())
@@ -459,19 +470,19 @@ def _build_full_model(model: "GLMModel", n_grid_points: int = 200) -> bytes:
 
     # Frequency-encoding terms
     for feat in features:
-        if feat['type'] != 'fe':
+        if feat["type"] != "fe":
             continue
-        var = feat['variable']
+        var = feat["variable"]
         col_idx = var_map.index(var)
-        coef = feat['coef']
+        coef = feat["coef"]
 
         sl = g.uid("fe")
         g.slice_col(input_name, col_idx, sl)
 
-        fe_all = _get_builder_attr(model, '_fe_stats', {})
+        fe_all = _get_builder_attr(model, "_fe_stats", {})
         fe_info = fe_all.get(var, {})
-        level_counts = fe_info.get('level_counts', {})
-        max_count = fe_info.get('max_count', 1)
+        level_counts = fe_info.get("level_counts", {})
+        max_count = fe_info.get("max_count", 1)
         levels = _get_all_levels(model, var)
         if not levels:
             levels = sorted(level_counts.keys())
@@ -529,15 +540,15 @@ def _build_full_model(model: "GLMModel", n_grid_points: int = 200) -> bytes:
     # Inverse link
     output_name = "prediction"
     link = model.link
-    if link == 'log':
+    if link == "log":
         g.add_node("Exp", [eta], [output_name])
-    elif link == 'logit':
+    elif link == "logit":
         g.add_node("Sigmoid", [eta], [output_name])
-    elif link == 'identity':
+    elif link == "identity":
         g.add_node("Identity", [eta], [output_name])
-    elif link == 'inverse':
+    elif link == "inverse":
         g.add_node("Reciprocal", [eta], [output_name])
-    elif link == 'sqrt':
+    elif link == "sqrt":
         g.add_node("Mul", [eta, eta], [output_name])
     else:
         g.add_node("Exp", [eta], [output_name])
@@ -545,48 +556,66 @@ def _build_full_model(model: "GLMModel", n_grid_points: int = 200) -> bytes:
     # ── Metadata ──
     cat_level_maps = {}
     for var, info in input_vars.items():
-        if info['type'] == 'categorical':
+        if info["type"] == "categorical":
             levels = _get_all_levels(model, var)
             if levels:
                 cat_level_maps[var] = levels
 
     meta_keys = [
-        'input_names',
-        'input_types',
-        'inverse_link',
-        'family',
+        "input_names",
+        "input_types",
+        "inverse_link",
+        "family",
     ]
     meta_values = [
         json.dumps(list(input_vars.keys())),
-        json.dumps({v: d['type'] for v, d in input_vars.items()}),
+        json.dumps({v: d["type"] for v, d in input_vars.items()}),
         _inverse_link_name(model.link),
         model.family,
     ]
     if cat_level_maps:
-        meta_keys.append('cat_level_maps')
+        meta_keys.append("cat_level_maps")
         meta_values.append(json.dumps(cat_level_maps))
 
     doc = f"RustyStats GLM: {model.family}, link={model.link}"
 
     # DT_DOUBLE = 11
     onnx_bytes = serialize_onnx_graph_py(
-        g.node_ops, g.node_inputs, g.node_outputs,
-        g.node_attr_names, g.node_attr_types, g.node_attr_ints, g.node_attr_floats,
-        g.init_names_f64, g.init_data_f64, g.init_shapes_f64,
-        g.init_names_i64, g.init_data_i64, g.init_shapes_i64,
-        [input_name], [11], [[-1, len(var_map)]],
-        [output_name], [11], [[-1, 1]],
-        8, 18, "RustyStats", doc,
-        meta_keys, meta_values,
+        g.node_ops,
+        g.node_inputs,
+        g.node_outputs,
+        g.node_attr_names,
+        g.node_attr_types,
+        g.node_attr_ints,
+        g.node_attr_floats,
+        g.init_names_f64,
+        g.init_data_f64,
+        g.init_shapes_f64,
+        g.init_names_i64,
+        g.init_data_i64,
+        g.init_shapes_i64,
+        [input_name],
+        [11],
+        [[-1, len(var_map)]],
+        [output_name],
+        [11],
+        [[-1, 1]],
+        8,
+        18,
+        "RustyStats",
+        doc,
+        meta_keys,
+        meta_values,
     )
     return bytes(onnx_bytes)
 
 
 # ── Public API ───────────────────────────────────────────────────────────────
 
+
 def to_onnx(
-    model: "GLMModel",
-    path: Optional[str] = None,
+    model: GLMModel,
+    path: str | None = None,
     n_grid_points: int = 200,
     mode: str = "scoring",
 ) -> bytes:
@@ -623,7 +652,7 @@ def to_onnx(
         onnx_bytes = _build_scoring_model(model)
 
     if path is not None:
-        with open(path, 'wb') as f:
+        with open(path, "wb") as f:
             f.write(onnx_bytes)
 
     return onnx_bytes

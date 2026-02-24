@@ -50,9 +50,9 @@
 //
 // =============================================================================
 
-use ndarray::Array1;
+use super::{BinomialFamily, Family, PoissonFamily};
 use crate::links::{Link, LogLink, LogitLink};
-use super::{Family, PoissonFamily, BinomialFamily};
+use ndarray::Array1;
 
 // =============================================================================
 // QuasiPoisson Family
@@ -121,14 +121,22 @@ impl Family for QuasiPoissonFamily {
     fn is_valid_mu(&self, mu: &Array1<f64>) -> bool {
         PoissonFamily.is_valid_mu(mu)
     }
-    
+
     fn clamp_mu(&self, mu: &Array1<f64>) -> Array1<f64> {
         PoissonFamily.clamp_mu(mu)
     }
-    
-    fn is_log_link_default(&self) -> bool { true }
-    
-    fn log_likelihood(&self, y: &Array1<f64>, mu: &Array1<f64>, _scale: f64, weights: Option<&Array1<f64>>) -> f64 {
+
+    fn is_log_link_default(&self) -> bool {
+        true
+    }
+
+    fn log_likelihood(
+        &self,
+        y: &Array1<f64>,
+        mu: &Array1<f64>,
+        _scale: f64,
+        weights: Option<&Array1<f64>>,
+    ) -> f64 {
         crate::diagnostics::log_likelihood_poisson(y, mu, weights)
     }
 }
@@ -201,12 +209,18 @@ impl Family for QuasiBinomialFamily {
     fn is_valid_mu(&self, mu: &Array1<f64>) -> bool {
         BinomialFamily.is_valid_mu(mu)
     }
-    
+
     fn clamp_mu(&self, mu: &Array1<f64>) -> Array1<f64> {
         BinomialFamily.clamp_mu(mu)
     }
-    
-    fn log_likelihood(&self, y: &Array1<f64>, mu: &Array1<f64>, _scale: f64, weights: Option<&Array1<f64>>) -> f64 {
+
+    fn log_likelihood(
+        &self,
+        y: &Array1<f64>,
+        mu: &Array1<f64>,
+        _scale: f64,
+        weights: Option<&Array1<f64>>,
+    ) -> f64 {
         crate::diagnostics::log_likelihood_binomial(y, mu, weights)
     }
 }
@@ -218,8 +232,8 @@ impl Family for QuasiBinomialFamily {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ndarray::array;
     use approx::assert_abs_diff_eq;
+    use ndarray::array;
 
     // =========================================================================
     // QuasiPoisson Tests
@@ -282,7 +296,7 @@ mod tests {
         let family = QuasiPoissonFamily;
 
         assert!(family.is_valid_mu(&array![0.1, 1.0, 10.0]));
-        assert!(!family.is_valid_mu(&array![0.0, 1.0]));  // Zero invalid
+        assert!(!family.is_valid_mu(&array![0.0, 1.0])); // Zero invalid
         assert!(!family.is_valid_mu(&array![-1.0, 1.0])); // Negative invalid
     }
 
@@ -357,9 +371,9 @@ mod tests {
         let family = QuasiBinomialFamily;
 
         assert!(family.is_valid_mu(&array![0.1, 0.5, 0.9]));
-        assert!(!family.is_valid_mu(&array![0.0, 0.5]));  // Zero boundary invalid
-        assert!(!family.is_valid_mu(&array![0.5, 1.0]));  // One boundary invalid
+        assert!(!family.is_valid_mu(&array![0.0, 0.5])); // Zero boundary invalid
+        assert!(!family.is_valid_mu(&array![0.5, 1.0])); // One boundary invalid
         assert!(!family.is_valid_mu(&array![-0.1, 0.5])); // Negative invalid
-        assert!(!family.is_valid_mu(&array![0.5, 1.1]));  // > 1 invalid
+        assert!(!family.is_valid_mu(&array![0.5, 1.1])); // > 1 invalid
     }
 }

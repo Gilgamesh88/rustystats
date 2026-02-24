@@ -22,6 +22,9 @@ edition = "2021"
 description = "Python bindings for RustyStats GLM library"
 license = "Elastic-2.0"
 
+[lints]
+workspace = true
+
 [lib]
 # "cdylib" means we're building a C-compatible dynamic library
 # This is required for Python to load our Rust code
