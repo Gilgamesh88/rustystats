@@ -1019,7 +1019,9 @@ class DiagnosticsComputer:
         mean_deviance = float(dataset_metrics["mean_deviance"])
         log_likelihood = float(dataset_metrics["log_likelihood"])
         aic_val = float(dataset_metrics["aic"])
-        bic_val = -2.0 * log_likelihood + self.n_params * math.log(n_obs) if n_obs > 0 else float("nan")
+        bic_val = (
+            -2.0 * log_likelihood + self.n_params * math.log(n_obs) if n_obs > 0 else float("nan")
+        )
 
         # Discrimination metrics
         stats = _rust_discrimination_stats(y, mu, exposure)

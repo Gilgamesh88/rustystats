@@ -685,8 +685,12 @@ def compute_diagnostics(
         "df_resid": computer.df_resid,
         "converged": converged,
         "iterations": iterations,
-        "scale": round(result.scale(), 6) if hasattr(result, "scale") and callable(getattr(result, "scale", None)) else None,
-        "scale_pearson": round(result.scale_pearson(), 6) if hasattr(result, "scale_pearson") and callable(getattr(result, "scale_pearson", None)) else None,
+        "scale": round(result.scale(), 6)
+        if hasattr(result, "scale") and callable(getattr(result, "scale", None))
+        else None,
+        "scale_pearson": round(result.scale_pearson(), 6)
+        if hasattr(result, "scale_pearson") and callable(getattr(result, "scale_pearson", None))
+        else None,
         "null_deviance": round(float(null_deviance), 2) if null_deviance is not None else None,
     }
 
