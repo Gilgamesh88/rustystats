@@ -1,6 +1,9 @@
 # RustyStats 🦀📊
 
 [![CI](https://github.com/PricingFrontier/rustystats/actions/workflows/ci.yml/badge.svg)](https://github.com/PricingFrontier/rustystats/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/rustystats)](https://pypi.org/project/rustystats/)
+[![Rust](https://img.shields.io/badge/rust-%E2%9C%94-orange?logo=rust)](https://www.rust-lang.org/)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 
 **High-performance Generalized Linear Models with a Rust backend and Python API**
 
@@ -581,4 +584,4 @@ preds = session.run(None, {"input": raw})[0]  # shape (3, 1)
 
 ## License
 
-[Elastic License 2.0 (ELv2)](LICENSE) — Free to use, modify, and distribute. Cannot be offered as a hosted/managed service.
+[AGPL-3.0](LICENSE)
