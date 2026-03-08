@@ -87,6 +87,37 @@ def get_default_link(family: str) -> str:
     return link
 
 
+def apply_link(mu: np.ndarray, link: str) -> np.ndarray:
+    """
+    Apply forward link function to transform response-scale values to linear predictor scale.
+
+    Parameters
+    ----------
+    mu : np.ndarray
+        Values on response scale (means)
+    link : str
+        Link function name ("identity", "log", "logit", "inverse")
+
+    Returns
+    -------
+    np.ndarray
+        Values on linear predictor scale (eta)
+    """
+    if link == "identity":
+        return mu
+    elif link in (None, "log"):
+        return np.log(mu)
+    elif link == "logit":
+        return np.log(mu / (1.0 - mu))
+    elif link == "inverse":
+        return 1.0 / mu
+    else:
+        raise ValidationError(
+            f"Unknown link function '{link}'. "
+            f"Supported links: 'identity', 'log', 'logit', 'inverse'."
+        )
+
+
 def apply_inverse_link(eta: np.ndarray, link: str) -> np.ndarray:
     """
     Apply inverse link function to linear predictor.
@@ -465,6 +496,8 @@ def _build_results(
     gcv: float | None,
     terms_dict: dict[str, dict[str, Any]] | None = None,
     interactions_spec: list[dict[str, Any]] | None = None,
+    complement_spec: str | GLMModel | None = None,
+    complement_values: np.ndarray | None = None,
 ) -> GLMModel:
     """Build GLMModel with all metadata."""
     # Clear builder caches to free memory (keep TE stats for prediction)
@@ -486,6 +519,8 @@ def _build_results(
         gcv=gcv,
         terms_dict=terms_dict,
         interactions_spec=interactions_spec,
+        complement_spec=complement_spec,
+        complement_values=complement_values,
     )
 
 
@@ -557,6 +592,74 @@ class _GLMBase:
             return _get_column(self.data, weights).astype(np.float64)
         else:
             return np.asarray(weights, dtype=np.float64)
+
+    def _process_complement(
+        self,
+        complement: str | np.ndarray | GLMModel | None,
+        offset_spec: str | np.ndarray | None,
+    ) -> np.ndarray | None:
+        """Process complement of credibility and merge into offset.
+
+        The complement represents prior predictions on the response scale
+        (rates for log-link models, probabilities for logit-link).
+        It is transformed to the link scale and added to the existing offset,
+        so that regularization shrinks coefficients toward the complement
+        rather than toward zero.
+
+        Parameters
+        ----------
+        complement : str, array-like, GLMModel, or None
+            Complement of credibility. If str, column name in data with values
+            on response scale. If GLMModel, predictions are computed on this
+            data (divided by exposure if applicable). If array, used directly.
+        offset_spec : str, array-like, or None
+            The offset specification (needed to extract exposure when complement
+            is a GLMModel).
+
+        Returns
+        -------
+        np.ndarray or None
+            Complement values on link scale, ready to add to offset.
+        """
+        if complement is None:
+            return None
+
+        # Extract response-scale complement values
+        if isinstance(complement, GLMModel):
+            comp_values = complement.predict(self.data)
+            # If model has exposure offset, divide by exposure to get rate
+            if isinstance(offset_spec, str) and self._uses_log_link():
+                exposure = _get_column(self.data, offset_spec)
+                comp_values = comp_values / exposure
+        elif isinstance(complement, str):
+            comp_values = _get_column(self.data, complement)
+        else:
+            comp_values = np.asarray(complement, dtype=np.float64)
+
+        comp_values = np.asarray(comp_values, dtype=np.float64)
+
+        # Validate
+        link = self.link or get_default_link(self.family)
+        if link in (None, "log"):
+            n_invalid = np.sum(comp_values <= 0)
+            if n_invalid > 0:
+                raise ValidationError(
+                    f"Complement values must be strictly positive for {self.family} family with log link. "
+                    f"Found {n_invalid} values <= 0."
+                )
+        elif link == "logit":
+            n_invalid = np.sum((comp_values <= 0) | (comp_values >= 1))
+            if n_invalid > 0:
+                raise ValidationError(
+                    f"Complement values must be in (0, 1) for {self.family} family with logit link. "
+                    f"Found {n_invalid} values outside range."
+                )
+
+        # Store raw complement for reporting (before link transform)
+        self._complement_values = comp_values
+
+        # Transform to link scale
+        return apply_link(comp_values, link)
 
     def _get_raw_exposure(
         self,
@@ -727,6 +830,8 @@ class GLMModel:
         gcv: float | None = None,
         terms_dict: dict[str, dict[str, Any]] | None = None,
         interactions_spec: list[dict[str, Any]] | None = None,
+        complement_spec: str | GLMModel | None = None,
+        complement_values: np.ndarray | None = None,
     ):
         self._result = result
         self._is_deserialized = isinstance(result, _DeserializedResult)
@@ -743,6 +848,8 @@ class GLMModel:
         self._offset_is_exposure = offset_is_exposure
         self._terms_dict = terms_dict
         self._interactions_spec = interactions_spec
+        self._complement_spec = complement_spec
+        self._complement_values = complement_values
 
     def __getattr__(self, name: str) -> Any:
         """Delegate attribute access to the underlying result object.
@@ -1007,9 +1114,72 @@ class GLMModel:
             }
         )
 
+    @property
+    def has_complement(self) -> bool:
+        """Whether the model was fitted with a complement of credibility."""
+        return self._complement_values is not None
+
+    def credibility_summary(self) -> pl.DataFrame:
+        """
+        Credibility summary for models fitted with a complement.
+
+        Shows each coefficient's deviation from the complement. Coefficients
+        shrunk to zero indicate full credibility in the complement for that
+        term. Non-zero deviations indicate the data supports a different value.
+
+        For log-link models, the Deviation_Factor column shows exp(beta) — the
+        multiplicative adjustment applied to the complement. A value of 1.0
+        means the complement is fully trusted.
+
+        Returns
+        -------
+        pl.DataFrame
+            DataFrame with Feature, Coef (deviation from complement),
+            Zeroed (whether lasso shrunk to zero), and Deviation_Factor
+            (for log-link models).
+
+        Raises
+        ------
+        ValidationError
+            If the model was not fitted with a complement.
+        """
+        import polars as pl
+
+        if not self.has_complement:
+            raise ValidationError(
+                "credibility_summary() requires a model fitted with complement=. "
+                "Use summary() for standard models."
+            )
+
+        coefs = self.params
+        zeroed = np.abs(coefs) < 1e-10
+        n_zeroed = int(np.sum(zeroed))
+        n_total = len(coefs) - 1  # Exclude intercept
+
+        result = {
+            "Feature": self.feature_names,
+            "Deviation": coefs,
+            "Zeroed": zeroed.tolist(),
+        }
+
+        if self.link == "log":
+            result["Deviation_Factor"] = np.exp(coefs)
+
+        df = pl.DataFrame(result)
+        # Add summary note as metadata attribute
+        df.__dict__["_credibility_note"] = (
+            f"{n_zeroed}/{n_total} non-intercept terms zeroed "
+            f"(complement fully trusted)"
+        )
+        return df
+
     def summary(self) -> str:
         """
         Generate a formatted summary string.
+
+        When the model was fitted with a complement of credibility,
+        the summary includes a note that coefficients represent
+        deviations from the complement.
 
         Returns
         -------
@@ -1018,7 +1188,27 @@ class GLMModel:
         """
         from rustystats.glm import summary
 
-        return summary(self._result, feature_names=self.feature_names)
+        title = "GLM Results"
+        if self.has_complement:
+            title = "Lasso Credibility Results"
+            if self._complement_spec is not None:
+                if isinstance(self._complement_spec, str):
+                    title += f" (complement: {self._complement_spec})"
+                elif isinstance(self._complement_spec, GLMModel):
+                    title += " (complement: GLMModel)"
+
+        result = summary(self._result, feature_names=self.feature_names, title=title)
+
+        if self.has_complement:
+            n_zeroed = int(np.sum(np.abs(self.params[1:]) < 1e-10))
+            n_total = len(self.params) - 1
+            result += (
+                f"\nNote: Coefficients are deviations from the complement of credibility.\n"
+                f"      {n_zeroed}/{n_total} non-intercept terms zeroed "
+                f"(complement fully trusted).\n"
+            )
+
+        return result
 
     def diagnostics(
         self,
@@ -1213,6 +1403,7 @@ class GLMModel:
         self,
         new_data: pl.DataFrame,
         offset: str | np.ndarray | None = None,
+        complement: str | np.ndarray | None = None,
     ) -> np.ndarray:
         """
         Predict on new data using the fitted model.
@@ -1225,6 +1416,10 @@ class GLMModel:
             Offset for new data. If None and the model was fit with an offset
             column name, that column will be extracted from new_data.
             For Poisson/Gamma with log link, log() is auto-applied to exposure.
+        complement : str or array-like, optional
+            Complement of credibility for new data (response scale).
+            If None and the model was fit with a complement column name,
+            that column will be extracted from new_data.
 
         Returns
         -------
@@ -1276,6 +1471,26 @@ class GLMModel:
             else:
                 offset_values = np.asarray(offset_to_use, dtype=np.float64)
             linear_pred = linear_pred + offset_values
+
+        # Handle complement (auto-use from fitting if not provided)
+        comp_to_use = complement
+        if comp_to_use is None and self._complement_spec is not None:
+            comp_to_use = self._complement_spec
+
+        if comp_to_use is not None:
+            if isinstance(comp_to_use, GLMModel):
+                comp_preds = comp_to_use.predict(new_data)
+                # Divide by exposure to get rate if model uses log-link with exposure
+                if self._offset_is_exposure and isinstance(self._offset_spec, str):
+                    exposure = new_data[self._offset_spec].to_numpy().astype(np.float64)
+                    comp_values = comp_preds / exposure
+                else:
+                    comp_values = comp_preds
+            elif isinstance(comp_to_use, str):
+                comp_values = new_data[comp_to_use].to_numpy().astype(np.float64)
+            else:
+                comp_values = np.asarray(comp_to_use, dtype=np.float64)
+            linear_pred = linear_pred + apply_link(comp_values, self.link)
 
         # Apply inverse link function to get predictions on response scale
         return self._apply_inverse_link(linear_pred)
@@ -1424,6 +1639,7 @@ class GLMModel:
             "gcv": self._gcv,
             "terms_dict": self._terms_dict,
             "interactions_spec": self._interactions_spec,
+            "complement_spec": self._complement_spec,
         }
 
         return pickle.dumps(state, protocol=pickle.HIGHEST_PROTOCOL)
@@ -1499,6 +1715,7 @@ class GLMModel:
             gcv=state["gcv"],
             terms_dict=state.get("terms_dict"),
             interactions_spec=state.get("interactions_spec"),
+            complement_spec=state.get("complement_spec"),
         )
 
     def __repr__(self) -> str:
@@ -1980,6 +2197,7 @@ class FormulaGLMDict(_GLMBase):
         offset: str | np.ndarray | None = None,
         weights: str | np.ndarray | None = None,
         seed: int | None = None,
+        complement: str | np.ndarray | None = None,
     ):
         self.response = response
         self.terms = terms
@@ -1994,6 +2212,8 @@ class FormulaGLMDict(_GLMBase):
         self._offset_spec = offset
         self._weights_spec = weights
         self._seed = seed
+        self._complement_spec = complement if isinstance(complement, (str, GLMModel)) else None
+        self._complement_values = None  # Set by _process_complement
 
         # Build formula string for compatibility (used in results/diagnostics)
         self.formula = self._build_formula_string()
@@ -2017,9 +2237,15 @@ class FormulaGLMDict(_GLMBase):
         self.n_obs = len(self.y)
         self.n_params = self.X.shape[1]
 
-        # Process offset and weights
+        # Process offset, weights, and complement
         self.offset = self._process_offset(offset)
         self.weights = self._process_weights(weights)
+        complement_link = self._process_complement(complement, offset)
+        if complement_link is not None:
+            if self.offset is not None:
+                self.offset = self.offset + complement_link
+            else:
+                self.offset = complement_link
 
     def _build_formula_string(self) -> str:
         """Build a formula string representation for display purposes."""
@@ -2242,6 +2468,8 @@ class FormulaGLMDict(_GLMBase):
             self._gcv,
             terms_dict=self.terms,
             interactions_spec=self.interactions_spec,
+            complement_spec=self._complement_spec,
+            complement_values=self._complement_values,
         )
 
 
@@ -2258,6 +2486,7 @@ def glm_dict(
     offset: str | np.ndarray | None = None,
     weights: str | np.ndarray | None = None,
     seed: int | None = None,
+    complement: str | np.ndarray | None = None,
 ) -> FormulaGLMDict:
     """
     Create a GLM model from a dict specification.
@@ -2299,11 +2528,18 @@ def glm_dict(
     theta : float, optional
         Dispersion for Negative Binomial.
     offset : str or array-like, optional
-        Offset term.
+        Offset term (e.g., exposure for rate models).
     weights : str or array-like, optional
         Prior weights.
     seed : int, optional
         Random seed for deterministic target encoding.
+    complement : str, array-like, or GLMModel, optional
+        Complement of credibility for lasso credibility. Values on
+        the response scale (rates for log-link, probabilities for logit).
+        When used with regularization (especially lasso), coefficients are
+        shrunk toward the complement rather than toward zero. If str,
+        column name in data. If GLMModel, predictions are computed and
+        divided by exposure if applicable.
 
     Returns
     -------
@@ -2312,6 +2548,7 @@ def glm_dict(
 
     Examples
     --------
+    >>> # Standard GLM
     >>> result = rs.glm_dict(
     ...     response="ClaimCount",
     ...     terms={
@@ -2320,13 +2557,23 @@ def glm_dict(
     ...         "Region": {"type": "categorical"},
     ...         "Brand": {"type": "target_encoding"},
     ...     },
-    ...     interactions=[
-    ...         {"VehAge": {"type": "linear"}, "Region": {"type": "categorical"}, "include_main": True},
-    ...     ],
     ...     data=data,
     ...     family="poisson",
     ...     offset="Exposure",
     ... ).fit()
+
+    >>> # Lasso credibility: shrink state model toward countrywide rates
+    >>> state_result = rs.glm_dict(
+    ...     response="ClaimCount",
+    ...     terms={
+    ...         "VehAge": {"type": "bs"},
+    ...         "Region": {"type": "categorical"},
+    ...     },
+    ...     data=state_data,
+    ...     family="poisson",
+    ...     offset="Exposure",
+    ...     complement="countrywide_rate",
+    ... ).fit(regularization="lasso")
     """
     return FormulaGLMDict(
         response=response,
@@ -2341,4 +2588,5 @@ def glm_dict(
         offset=offset,
         weights=weights,
         seed=seed,
+        complement=complement,
     )

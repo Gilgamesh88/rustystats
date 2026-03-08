@@ -18,6 +18,7 @@
 - **Splines** - B-splines and natural splines with auto-tuned smoothing and monotonicity
 - **Target Encoding** - Ordered target encoding for high-cardinality categoricals
 - **Regularisation** - Ridge, Lasso, and Elastic Net via coordinate descent
+- **Lasso Credibility** - Shrink toward a prior model instead of zero (CAS Monograph 13)
 - **Validation** - Design matrix checks with fix suggestions before fitting
 - **Complete** - 8 families, robust SEs, full diagnostics, VIF, partial dependence
 - **Minimal** - Only `numpy` and `polars` required
@@ -322,6 +323,48 @@ result = rs.glm_dict(response="y", terms={"x1": {"type": "linear"}, "x2": {"type
 result = rs.glm_dict(response="y", terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}}, data=data).fit(alpha=0.1, l1_ratio=0.5)  # Elastic Net
 ```
 
+### Lasso Credibility
+
+Shrink model coefficients toward a prior model (complement of credibility) instead of toward zero. Based on the methodology in CAS Monograph 13 (Holmes & Casotto, 2025).
+
+When lasso zeroes a coefficient, the prediction for that term falls back to the complement rather than vanishing — making regularized models directly usable as rating plans.
+
+```python
+# 1. Fit a countrywide (prior) model
+cw_result = rs.glm_dict(
+    response="ClaimCount",
+    terms={"VehAge": {"type": "bs"}, "DrivAge": {"type": "bs"}},
+    data=countrywide_data,
+    family="poisson",
+    offset="Exposure",
+).fit()
+
+# 2. Fit a state model with lasso, shrinking toward countrywide rates
+state_result = rs.glm_dict(
+    response="ClaimCount",
+    terms={
+        "VehAge": {"type": "bs"},
+        "DrivAge": {"type": "bs"},
+        "Region": {"type": "categorical"},
+    },
+    data=state_data,
+    family="poisson",
+    offset="Exposure",
+    complement="countrywide_rate",  # Column with prior rates (response scale)
+).fit(regularization="lasso")
+
+# 3. Inspect which terms the data supports vs. trusts the complement
+print(state_result.summary())            # Shows "Lasso Credibility Results"
+print(state_result.credibility_summary())  # Deviation from complement per term
+```
+
+**Complement sources:**
+- `str` — column name in the DataFrame (rates for log-link, probabilities for logit)
+- `np.ndarray` — array of prior values on the response scale
+- `GLMModel` — fitted model; predictions are computed automatically
+
+Works with all families/links, splines, categoricals, interactions, and target encoding.
+
 ---
 
 ## Design Matrix Validation
@@ -500,6 +543,7 @@ predictions = loaded.predict(new_data)
 - Spline knot positions
 - Target encoding statistics
 - Formula, family, link function
+- Complement of credibility specification
 
 **Compact storage:** Only prediction-essential state is stored (~KB, not MB).
 

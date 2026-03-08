@@ -8,8 +8,8 @@
     "df_resid": 5,
     "converged": true,
     "iterations": 2,
-    "scale": 0.778683,
-    "scale_pearson": 0.778683,
+    "scale": 0.774078,
+    "scale_pearson": 0.774078,
     "null_deviance": 4.88
   },
   "train_test": {
@@ -18,15 +18,15 @@
       "n_obs": 8,
       "total_exposure": 8.0,
       "total_actual": 15.0,
-      "total_predicted": 14.8,
-      "loss": 1.1137,
-      "deviance": 8.91,
-      "log_likelihood": -12.16,
-      "aic": 30.32,
-      "bic": 30.56,
+      "total_predicted": 15.2,
+      "loss": 1.1373,
+      "deviance": 9.1,
+      "log_likelihood": -12.25,
+      "aic": 30.49,
+      "bic": 30.73,
       "gini": -0.1083,
       "auc": 0.4458,
-      "ae_ratio": 1.0134,
+      "ae_ratio": 0.9865,
       "ae_by_decile": [
         {
           "decile": 1,
@@ -105,8 +105,8 @@
           "n": 8,
           "exposure": 8.0,
           "actual": 1.875,
-          "predicted": 1.8503,
-          "ae_ratio": 1.0134
+          "predicted": 1.9006,
+          "ae_ratio": 0.9865
         }
       ],
       "factor_diagnostics": {},
@@ -122,30 +122,30 @@
     "unstable_factors": []
   },
   "calibration": {
-    "ae_ratio": 1.013,
-    "hl_pvalue": 0.9125,
+    "ae_ratio": 0.987,
+    "hl_pvalue": 0.9119,
     "problem_deciles": []
   },
   "residual_summary": {
     "pearson": {
-      "mean": 0.02,
-      "std": 1.06,
+      "mean": -0.03,
+      "std": 1.07,
       "skewness": 0.4
     },
     "deviance": {
-      "mean": 0.02,
-      "std": 1.06,
+      "mean": -0.03,
+      "std": 1.07,
       "skewness": 0.4
     }
   },
   "factors": [],
   "interaction_candidates": [],
   "model_comparison": {
-    "likelihood_ratio_chi2": 0.981585,
+    "likelihood_ratio_chi2": 1.0046,
     "likelihood_ratio_df": 2,
-    "likelihood_ratio_pvalue": 0.612141,
-    "deviance_reduction_pct": 20.1351,
-    "aic_improvement": -3.0184
+    "likelihood_ratio_pvalue": 0.605134,
+    "deviance_reduction_pct": 20.6074,
+    "aic_improvement": -2.9954
   },
   "warnings": [
     {
@@ -171,14 +171,14 @@
   "coefficient_summary": [
     {
       "feature": "TE(brand:region)",
-      "estimate": -1.5838,
-      "std_error": 1.4508,
-      "z_value": -1.092,
-      "p_value": 0.275,
+      "estimate": -1.6371,
+      "std_error": 1.477,
+      "z_value": -1.108,
+      "p_value": 0.2677,
       "significant": false,
       "conf_int": [
-        -4.4273,
-        1.2597
+        -4.532,
+        1.2577
       ],
       "relativity": null,
       "relativity_ci": null,
@@ -189,14 +189,14 @@
     },
     {
       "feature": "age",
-      "estimate": 0.018691,
-      "std_error": 0.029215,
-      "z_value": 0.64,
-      "p_value": 0.5223,
+      "estimate": 0.017984,
+      "std_error": 0.02886,
+      "z_value": 0.623,
+      "p_value": 0.5332,
       "significant": false,
       "conf_int": [
-        -0.038569,
-        0.075952
+        -0.03858,
+        0.074548
       ],
       "relativity": null,
       "relativity_ci": null,
@@ -207,14 +207,14 @@
     },
     {
       "feature": "Intercept",
-      "estimate": 4.0255,
-      "std_error": 2.5476,
-      "z_value": 1.58,
-      "p_value": 0.1141,
+      "estimate": 4.2059,
+      "std_error": 2.6603,
+      "z_value": 1.581,
+      "p_value": 0.1139,
       "significant": false,
       "conf_int": [
-        -0.967692,
-        9.0187
+        -1.0083,
+        9.4201
       ],
       "relativity": null,
       "relativity_ci": null,
@@ -340,8 +340,8 @@
         "n": 8,
         "exposure": 8.0,
         "actual": 1.875,
-        "predicted": 1.8503,
-        "ae_ratio": 1.013,
+        "predicted": 1.9006,
+        "ae_ratio": 0.987,
         "cumulative_actual_pct": 100.0,
         "cumulative_predicted_pct": 100.0,
         "lift": 1.0,
@@ -349,8 +349,8 @@
       }
     ],
     "gini": -0.108,
-    "ks_statistic": 0.0,
-    "ks_decile": 10,
+    "ks_statistic": 0,
+    "ks_decile": 1,
     "weak_deciles": [
       8,
       9,
