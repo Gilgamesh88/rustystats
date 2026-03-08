@@ -1168,8 +1168,7 @@ class GLMModel:
         df = pl.DataFrame(result)
         # Add summary note as metadata attribute
         df.__dict__["_credibility_note"] = (
-            f"{n_zeroed}/{n_total} non-intercept terms zeroed "
-            f"(complement fully trusted)"
+            f"{n_zeroed}/{n_total} non-intercept terms zeroed (complement fully trusted)"
         )
         return df
 

@@ -492,7 +492,7 @@ class TestComplementFitting:
             family="poisson",
             offset="exposure",
             complement="cw_rate",
-        ).fit(regularization="elastic_net")
+        ).fit(alpha=1.0, l1_ratio=0.5)
         assert result.converged
         assert result.has_complement
         assert result.is_regularized
