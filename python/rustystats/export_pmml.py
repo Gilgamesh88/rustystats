@@ -697,7 +697,8 @@ class PMMLExporter:
                 ET.SubElement(elem, "Value", {"value": str(lv)})
         if offset_var and offset_var not in self._raw_inputs:
             ET.SubElement(
-                dd, "DataField",
+                dd,
+                "DataField",
                 {"name": offset_var, "optype": "continuous", "dataType": "double"},
             )
 
