@@ -1935,5 +1935,374 @@ class TestDictTrainPredictConsistency:
         assert np.all(np.isfinite(test_pred))
 
 
+# =============================================================================
+# LazyFrame Tests
+# =============================================================================
+
+from rustystats.formula import _collect_lazyframe, _extract_needed_columns
+
+
+class TestExtractNeededColumns:
+    """Unit tests for _extract_needed_columns column detection."""
+
+    def test_terms_only(self):
+        cols = _extract_needed_columns(terms={})
+        assert cols == set()
+
+    def test_response_included_when_provided(self):
+        cols = _extract_needed_columns(terms={}, response="y")
+        assert cols == {"y"}
+
+    def test_response_omitted_for_prediction(self):
+        cols = _extract_needed_columns(
+            terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
+        )
+        assert cols == {"x1", "x2"}
+
+    def test_linear_terms(self):
+        cols = _extract_needed_columns(
+            terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
+            response="y",
+        )
+        assert cols == {"y", "x1", "x2"}
+
+    def test_categorical_terms(self):
+        cols = _extract_needed_columns(
+            terms={"region": {"type": "categorical"}},
+            response="y",
+        )
+        assert cols == {"y", "region"}
+
+    def test_spline_terms(self):
+        cols = _extract_needed_columns(
+            terms={"age": {"type": "bs", "df": 5}, "income": {"type": "ns"}},
+            response="y",
+        )
+        assert cols == {"y", "age", "income"}
+
+    def test_expression_extracts_referenced_columns(self):
+        cols = _extract_needed_columns(
+            terms={"x1_sq": {"type": "expression", "expr": "x1 ** 2"}},
+            response="y",
+        )
+        assert cols == {"y", "x1"}
+
+    def test_expression_binary_op_extracts_both_columns(self):
+        cols = _extract_needed_columns(
+            terms={"ratio": {"type": "expression", "expr": "weight / height"}},
+            response="y",
+        )
+        assert cols == {"y", "weight", "height"}
+
+    def test_expression_missing_expr_key_raises(self):
+        with pytest.raises(KeyError):
+            _extract_needed_columns(
+                terms={"bad": {"type": "expression"}},
+            )
+
+    def test_expression_does_not_include_numeric_literals(self):
+        cols = _extract_needed_columns(
+            terms={"scaled": {"type": "expression", "expr": "income / 1000"}},
+            response="y",
+        )
+        assert "1000" not in cols
+        assert cols == {"y", "income"}
+
+    def test_interaction_columns(self):
+        cols = _extract_needed_columns(
+            terms={},
+            response="y",
+            interactions=[
+                {"x1": {"type": "linear"}, "cat": {"type": "categorical"}, "include_main": True},
+            ],
+        )
+        assert cols == {"y", "x1", "cat"}
+
+    def test_interaction_flags_excluded(self):
+        """include_main, target_encoding, frequency_encoding, prior_weight are not column names."""
+        cols = _extract_needed_columns(
+            terms={},
+            response="y",
+            interactions=[
+                {
+                    "a": {"type": "categorical"},
+                    "b": {"type": "categorical"},
+                    "target_encoding": True,
+                    "prior_weight": 1.0,
+                    "include_main": False,
+                    "frequency_encoding": False,
+                },
+            ],
+        )
+        assert cols == {"y", "a", "b"}
+
+    def test_offset_string(self):
+        cols = _extract_needed_columns(
+            terms={"x": {"type": "linear"}},
+            response="y",
+            offset="exposure",
+        )
+        assert "exposure" in cols
+
+    def test_offset_array_not_included(self):
+        cols = _extract_needed_columns(
+            terms={"x": {"type": "linear"}},
+            response="y",
+            offset=np.array([1.0]),
+        )
+        assert cols == {"y", "x"}
+
+    def test_weights_string(self):
+        cols = _extract_needed_columns(
+            terms={"x": {"type": "linear"}},
+            response="y",
+            weights="w",
+        )
+        assert "w" in cols
+
+    def test_complement_string(self):
+        cols = _extract_needed_columns(
+            terms={"x": {"type": "linear"}},
+            response="y",
+            complement="prior_rate",
+        )
+        assert "prior_rate" in cols
+
+    def test_all_sources_combined(self):
+        """Every source of columns works together without duplication."""
+        cols = _extract_needed_columns(
+            terms={
+                "x1": {"type": "linear"},
+                "cat": {"type": "categorical"},
+                "x1_sq": {"type": "expression", "expr": "x1 ** 2"},
+                "age": {"type": "bs", "df": 4},
+            },
+            response="y",
+            interactions=[
+                {"x1": {"type": "linear"}, "region": {"type": "categorical"}, "include_main": True},
+            ],
+            offset="exposure",
+            weights="w",
+            complement="prior",
+        )
+        assert cols == {"y", "x1", "cat", "age", "region", "exposure", "w", "prior"}
+
+
+class TestCollectLazyFrame:
+    """Unit tests for _collect_lazyframe."""
+
+    def test_dataframe_passes_through(self):
+        df = pl.DataFrame({"a": [1], "b": [2]})
+        result = _collect_lazyframe(df, {"a"})
+        assert result is df  # exact same object, no copy
+
+    def test_lazyframe_selects_only_needed_columns(self):
+        df = pl.DataFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6]})
+        result = _collect_lazyframe(df.lazy(), {"a", "c"})
+        assert sorted(result.columns) == ["a", "c"]
+        assert result.shape == (2, 2)
+
+    def test_lazyframe_missing_column_raises(self):
+        df = pl.DataFrame({"a": [1]})
+        with pytest.raises(pl.exceptions.ColumnNotFoundError):
+            _collect_lazyframe(df.lazy(), {"a", "nonexistent"})
+
+    def test_lazyframe_empty_needed_collects_all(self):
+        df = pl.DataFrame({"a": [1], "b": [2], "c": [3]})
+        result = _collect_lazyframe(df.lazy(), set())
+        assert sorted(result.columns) == ["a", "b", "c"]
+
+
+class TestLazyFrameIntegration:
+    """Integration tests: LazyFrame through glm_dict produces identical results to DataFrame."""
+
+    @pytest.fixture
+    def wide_data(self):
+        np.random.seed(42)
+        n = 200
+        return pl.DataFrame(
+            {
+                "y": np.random.poisson(1, n),
+                "x1": np.random.uniform(0, 10, n),
+                "x2": np.random.uniform(0, 10, n),
+                "cat": np.random.choice(["A", "B", "C"], n),
+                "exposure": np.random.uniform(0.5, 1.5, n),
+                "weight": np.random.uniform(0.5, 2.0, n),
+                "unused1": np.random.normal(0, 1, n),
+                "unused2": np.random.normal(0, 1, n),
+                "unused3": np.random.choice(["X", "Y"], n),
+            }
+        )
+
+    def _fit_both(self, wide_data, **kwargs):
+        """Fit with DataFrame and LazyFrame, return both results."""
+        result_df = rs.glm_dict(data=wide_data, **kwargs).fit()
+        result_lf = rs.glm_dict(data=wide_data.lazy(), **kwargs).fit()
+        return result_df, result_lf
+
+    def test_linear_terms(self, wide_data):
+        r_df, r_lf = self._fit_both(
+            wide_data,
+            response="y",
+            terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
+            family="poisson",
+            offset="exposure",
+        )
+        np.testing.assert_allclose(r_df.params, r_lf.params)
+
+    def test_categorical(self, wide_data):
+        r_df, r_lf = self._fit_both(
+            wide_data,
+            response="y",
+            terms={"x1": {"type": "linear"}, "cat": {"type": "categorical"}},
+            family="poisson",
+        )
+        np.testing.assert_allclose(r_df.params, r_lf.params)
+
+    def test_spline(self, wide_data):
+        r_df, r_lf = self._fit_both(
+            wide_data,
+            response="y",
+            terms={"x1": {"type": "bs", "df": 4}},
+            family="poisson",
+        )
+        np.testing.assert_allclose(r_df.params, r_lf.params)
+
+    def test_expression(self, wide_data):
+        r_df, r_lf = self._fit_both(
+            wide_data,
+            response="y",
+            terms={
+                "x1": {"type": "linear"},
+                "x1_sq": {"type": "expression", "expr": "x1 ** 2"},
+            },
+            family="poisson",
+        )
+        np.testing.assert_allclose(r_df.params, r_lf.params)
+
+    def test_interaction(self, wide_data):
+        r_df, r_lf = self._fit_both(
+            wide_data,
+            response="y",
+            terms={"x1": {"type": "linear"}, "cat": {"type": "categorical"}},
+            interactions=[
+                {"x1": {"type": "linear"}, "cat": {"type": "categorical"}, "include_main": False},
+            ],
+            family="poisson",
+        )
+        np.testing.assert_allclose(r_df.params, r_lf.params)
+
+    def test_weights(self, wide_data):
+        r_df, r_lf = self._fit_both(
+            wide_data,
+            response="y",
+            terms={"x1": {"type": "linear"}},
+            family="poisson",
+            weights="weight",
+        )
+        np.testing.assert_allclose(r_df.params, r_lf.params)
+
+    def test_predict_identical(self, wide_data):
+        """predict() with LazyFrame gives identical results to DataFrame."""
+        result = rs.glm_dict(
+            response="y",
+            terms={"x1": {"type": "linear"}, "cat": {"type": "categorical"}},
+            data=wide_data,
+            family="poisson",
+            offset="exposure",
+        ).fit()
+
+        pred_df = result.predict(wide_data)
+        pred_lf = result.predict(wide_data.lazy())
+        np.testing.assert_allclose(pred_df, pred_lf)
+
+    def test_predict_with_explicit_offset(self, wide_data):
+        """predict() with LazyFrame and string offset resolves correctly."""
+        result = rs.glm_dict(
+            response="y",
+            terms={"x1": {"type": "linear"}},
+            data=wide_data,
+            family="poisson",
+            offset="exposure",
+        ).fit()
+
+        pred_df = result.predict(wide_data, offset="exposure")
+        pred_lf = result.predict(wide_data.lazy(), offset="exposure")
+        np.testing.assert_allclose(pred_df, pred_lf)
+
+    def test_missing_column_in_lazyframe_raises(self, wide_data):
+        """LazyFrame missing a needed column raises immediately, not deep in the pipeline."""
+        lf_missing = wide_data.select("y", "x1").lazy()
+        with pytest.raises(pl.exceptions.ColumnNotFoundError):
+            rs.glm_dict(
+                response="y",
+                terms={"x1": {"type": "linear"}, "cat": {"type": "categorical"}},
+                data=lf_missing,
+                family="poisson",
+            )
+
+    def test_unused_columns_not_collected(self, wide_data):
+        """Verify the LazyFrame only materialises needed columns via scan_parquet simulation."""
+        # We can't intercept Polars' internal read, but we can verify by giving
+        # a LazyFrame that only has the needed columns — it should work fine,
+        # proving unused columns weren't required.
+        needed_only = wide_data.select("y", "x1", "exposure").lazy()
+        result = rs.glm_dict(
+            response="y",
+            terms={"x1": {"type": "linear"}},
+            data=needed_only,
+            family="poisson",
+            offset="exposure",
+        ).fit()
+        assert result.converged
+
+    def test_expression_column_not_in_terms_still_collected(self, wide_data):
+        """Expression referencing a column not in terms dict still works."""
+        # x2 is not a term key, but referenced in the expression
+        result = rs.glm_dict(
+            response="y",
+            terms={"ratio": {"type": "expression", "expr": "x1 / x2"}},
+            data=wide_data.lazy(),
+            family="poisson",
+        ).fit()
+        assert result.converged
+
+    def test_deserialized_model_predict_with_lazyframe(self, wide_data):
+        """Deserialized model (from_bytes) still prunes columns on predict with LazyFrame."""
+        result = rs.glm_dict(
+            response="y",
+            terms={"x1": {"type": "linear"}, "cat": {"type": "categorical"}},
+            data=wide_data,
+            family="poisson",
+            offset="exposure",
+        ).fit()
+
+        loaded = rs.GLMModel.from_bytes(result.to_bytes())
+
+        # Predict with full DataFrame
+        pred_df = loaded.predict(wide_data)
+
+        # Predict with LazyFrame containing only needed columns
+        needed_only = wide_data.select("x1", "cat", "exposure").lazy()
+        pred_lf = loaded.predict(needed_only)
+
+        np.testing.assert_allclose(pred_df, pred_lf)
+
+    def test_deserialized_model_predict_lazyframe_missing_col_raises(self, wide_data):
+        """Deserialized model raises on LazyFrame missing a needed column."""
+        result = rs.glm_dict(
+            response="y",
+            terms={"x1": {"type": "linear"}, "cat": {"type": "categorical"}},
+            data=wide_data,
+            family="poisson",
+        ).fit()
+
+        loaded = rs.GLMModel.from_bytes(result.to_bytes())
+
+        lf_missing = wide_data.select("x1").lazy()  # missing "cat"
+        with pytest.raises(pl.exceptions.ColumnNotFoundError):
+            loaded.predict(lf_missing)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

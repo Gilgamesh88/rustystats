@@ -11,11 +11,11 @@ Run with:
     pytest tests/python/test_comparison.py -v --tb=short
 """
 
+import warnings
+
 import numpy as np
 import polars as pl
 import pytest
-import warnings
-
 import rustystats as rs
 
 # Reference libraries
@@ -32,13 +32,13 @@ warnings.filterwarnings("ignore")
 SEED = 42
 N = 2000  # large enough for stable estimates
 
-COEF_ATOL = 0.02       # absolute tolerance on coefficients
-COEF_RTOL = 0.01       # 1 % relative tolerance on coefficients
-SE_RTOL = 0.03         # 3 % relative tolerance on standard errors
+COEF_ATOL = 0.02  # absolute tolerance on coefficients
+COEF_RTOL = 0.01  # 1 % relative tolerance on coefficients
+SE_RTOL = 0.03  # 3 % relative tolerance on standard errors
 DEVIANCE_RTOL = 0.005  # 0.5 % relative tolerance on deviance
-LLF_ATOL = 2.0         # absolute tolerance on log-likelihood
-PRED_RTOL = 0.005      # 0.5 % relative tolerance on predictions
-RESID_ATOL = 0.05      # absolute tolerance on residuals
+LLF_ATOL = 2.0  # absolute tolerance on log-likelihood
+PRED_RTOL = 0.005  # 0.5 % relative tolerance on predictions
+RESID_ATOL = 0.05  # absolute tolerance on residuals
 
 
 def _close(a, b, atol=0.0, rtol=0.01):
@@ -82,18 +82,20 @@ def _gen_data(seed=SEED):
     alpha_nb = 0.5  # statsmodels alpha
     y_nb = rng.negative_binomial(1 / alpha_nb, 1 / (1 + alpha_nb * mu_nb)).astype(float)
 
-    df = pl.DataFrame({
-        "y_gauss": y_gauss,
-        "y_pois": y_pois,
-        "y_binom": y_binom,
-        "y_gamma": y_gamma,
-        "y_nb": y_nb,
-        "x1": x1,
-        "x2": x2,
-        "cat": cat,
-        "exposure": exposure,
-        "weight": weight,
-    })
+    df = pl.DataFrame(
+        {
+            "y_gauss": y_gauss,
+            "y_pois": y_pois,
+            "y_binom": y_binom,
+            "y_gamma": y_gamma,
+            "y_nb": y_nb,
+            "x1": x1,
+            "x2": x2,
+            "cat": cat,
+            "exposure": exposure,
+            "weight": weight,
+        }
+    )
     return df, x1, x2, cat, exposure, weight
 
 
@@ -106,6 +108,7 @@ def data():
 # ===========================================================================
 # Test 1: Gaussian family
 # ===========================================================================
+
 
 class TestGaussianFamily:
     """Gaussian GLM: coefficients, SE, deviance, llf, AIC, BIC, scale, predictions."""
@@ -120,7 +123,8 @@ class TestGaussianFamily:
         rs_res = rs.glm_dict(
             response="y_gauss",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="gaussian",
+            data=df,
+            family="gaussian",
         ).fit()
 
         # Coefficients
@@ -152,7 +156,8 @@ class TestGaussianFamily:
         rs_res = rs.glm_dict(
             response="y_gauss",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="gaussian",
+            data=df,
+            family="gaussian",
         ).fit()
 
         glum_coefs = np.concatenate([[glum_model.intercept_], glum_model.coef_])
@@ -165,6 +170,7 @@ class TestGaussianFamily:
 # ===========================================================================
 # Test 2: Poisson family
 # ===========================================================================
+
 
 class TestPoissonFamily:
     """Poisson GLM: coefficients, SE, deviance, llf, AIC, BIC, predictions."""
@@ -179,7 +185,8 @@ class TestPoissonFamily:
         rs_res = rs.glm_dict(
             response="y_pois",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="poisson",
+            data=df,
+            family="poisson",
         ).fit()
 
         np.testing.assert_allclose(rs_res.params, sm_res.params, atol=COEF_ATOL, rtol=COEF_RTOL)
@@ -200,7 +207,8 @@ class TestPoissonFamily:
         rs_res = rs.glm_dict(
             response="y_pois",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="poisson",
+            data=df,
+            family="poisson",
         ).fit()
 
         glum_coefs = np.concatenate([[glum_model.intercept_], glum_model.coef_])
@@ -210,6 +218,7 @@ class TestPoissonFamily:
 # ===========================================================================
 # Test 3: Binomial (Logistic) family
 # ===========================================================================
+
 
 class TestBinomialFamily:
     """Binomial GLM: coefficients, SE, deviance, llf, AIC, BIC, predictions."""
@@ -224,7 +233,8 @@ class TestBinomialFamily:
         rs_res = rs.glm_dict(
             response="y_binom",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="binomial",
+            data=df,
+            family="binomial",
         ).fit()
 
         np.testing.assert_allclose(rs_res.params, sm_res.params, atol=COEF_ATOL, rtol=COEF_RTOL)
@@ -244,7 +254,8 @@ class TestBinomialFamily:
         rs_res = rs.glm_dict(
             response="y_binom",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="binomial",
+            data=df,
+            family="binomial",
         ).fit()
 
         glum_coefs = np.concatenate([[glum_model.intercept_], glum_model.coef_])
@@ -254,6 +265,7 @@ class TestBinomialFamily:
 # ===========================================================================
 # Test 4: Gamma family
 # ===========================================================================
+
 
 class TestGammaFamily:
     """Gamma GLM: coefficients, SE, deviance, llf, AIC, BIC, scale, predictions."""
@@ -268,7 +280,8 @@ class TestGammaFamily:
         rs_res = rs.glm_dict(
             response="y_gamma",
             terms={"x1": {"type": "linear"}},
-            data=df, family="gamma",
+            data=df,
+            family="gamma",
         ).fit()
 
         np.testing.assert_allclose(rs_res.params, sm_res.params, atol=COEF_ATOL, rtol=COEF_RTOL)
@@ -282,13 +295,16 @@ class TestGammaFamily:
         y = df["y_gamma"].to_numpy()
         X_np = x1.reshape(-1, 1)
 
-        glum_model = GeneralizedLinearRegressor(family="gamma", link="log", alpha=0, fit_intercept=True)
+        glum_model = GeneralizedLinearRegressor(
+            family="gamma", link="log", alpha=0, fit_intercept=True
+        )
         glum_model.fit(X_np, y)
 
         rs_res = rs.glm_dict(
             response="y_gamma",
             terms={"x1": {"type": "linear"}},
-            data=df, family="gamma",
+            data=df,
+            family="gamma",
         ).fit()
 
         glum_coefs = np.concatenate([[glum_model.intercept_], glum_model.coef_])
@@ -299,11 +315,12 @@ class TestGammaFamily:
 # Test 5: Tweedie family
 # ===========================================================================
 
+
 class TestTweedieFamily:
     """Tweedie GLM (var_power=1.5): coefficients, deviance, predictions."""
 
     def test_vs_statsmodels(self, data):
-        df, x1, *_ = data
+        _df, x1, *_ = data
         # Generate Tweedie-like data (compound Poisson-Gamma)
         rng = np.random.RandomState(SEED)
         p_tw = 1.5
@@ -313,10 +330,12 @@ class TestTweedieFamily:
         n_claims = rng.poisson(lambda_p)
         alpha_g = (2 - p_tw) / (p_tw - 1)
         beta_g = phi_tw * (p_tw - 1) * mu_tw ** (p_tw - 1)
-        y_tw = np.array([
-            np.sum(rng.gamma(alpha_g, beta_g[i], n_claims[i])) if n_claims[i] > 0 else 0.0
-            for i in range(N)
-        ])
+        y_tw = np.array(
+            [
+                np.sum(rng.gamma(alpha_g, beta_g[i], n_claims[i])) if n_claims[i] > 0 else 0.0
+                for i in range(N)
+            ]
+        )
         # Use only positive values for a cleaner comparison
         mask = y_tw > 0
         y_pos = y_tw[mask]
@@ -324,7 +343,8 @@ class TestTweedieFamily:
 
         X_sm = sm.add_constant(x1_pos)
         sm_res = sm.GLM(
-            y_pos, X_sm,
+            y_pos,
+            X_sm,
             family=smf.Tweedie(var_power=p_tw, link=smf.links.Log()),
         ).fit()
 
@@ -332,14 +352,16 @@ class TestTweedieFamily:
         rs_res = rs.glm_dict(
             response="y",
             terms={"x1": {"type": "linear"}},
-            data=df_tw, family="tweedie", var_power=p_tw,
+            data=df_tw,
+            family="tweedie",
+            var_power=p_tw,
         ).fit()
 
         np.testing.assert_allclose(rs_res.params, sm_res.params, atol=0.1, rtol=0.05)
         np.testing.assert_allclose(rs_res.fittedvalues, sm_res.predict(X_sm), rtol=0.02)
 
     def test_vs_glum(self, data):
-        df, x1, *_ = data
+        _df, x1, *_ = data
         rng = np.random.RandomState(SEED)
         p_tw = 1.5
         mu_tw = np.exp(1.0 + 0.1 * x1)
@@ -348,24 +370,33 @@ class TestTweedieFamily:
         n_claims = rng.poisson(lambda_p)
         alpha_g = (2 - p_tw) / (p_tw - 1)
         beta_g = phi_tw * (p_tw - 1) * mu_tw ** (p_tw - 1)
-        y_tw = np.array([
-            np.sum(rng.gamma(alpha_g, beta_g[i], n_claims[i])) if n_claims[i] > 0 else 0.0
-            for i in range(N)
-        ])
+        y_tw = np.array(
+            [
+                np.sum(rng.gamma(alpha_g, beta_g[i], n_claims[i])) if n_claims[i] > 0 else 0.0
+                for i in range(N)
+            ]
+        )
         mask = y_tw > 0
         y_pos = y_tw[mask]
         x1_pos = x1[mask]
 
         from glum import TweedieDistribution
+
         glum_model = GeneralizedLinearRegressor(
-            family=TweedieDistribution(power=p_tw), link="log", alpha=0, fit_intercept=True,
+            family=TweedieDistribution(power=p_tw),
+            link="log",
+            alpha=0,
+            fit_intercept=True,
         )
         glum_model.fit(x1_pos.reshape(-1, 1), y_pos)
 
         df_tw = pl.DataFrame({"y": y_pos, "x1": x1_pos})
         rs_res = rs.glm_dict(
-            response="y", terms={"x1": {"type": "linear"}},
-            data=df_tw, family="tweedie", var_power=p_tw,
+            response="y",
+            terms={"x1": {"type": "linear"}},
+            data=df_tw,
+            family="tweedie",
+            var_power=p_tw,
         ).fit()
 
         glum_coefs = np.concatenate([[glum_model.intercept_], glum_model.coef_])
@@ -375,6 +406,7 @@ class TestTweedieFamily:
 # ===========================================================================
 # Test 6: Negative Binomial family
 # ===========================================================================
+
 
 class TestNegBinomialFamily:
     """Negative Binomial GLM: coefficients, SE, deviance, predictions."""
@@ -392,7 +424,9 @@ class TestNegBinomialFamily:
         rs_res = rs.glm_dict(
             response="y_nb",
             terms={"x1": {"type": "linear"}},
-            data=df, family="negbinomial", theta=theta_nb,
+            data=df,
+            family="negbinomial",
+            theta=theta_nb,
         ).fit()
 
         np.testing.assert_allclose(rs_res.params, sm_res.params, atol=0.05, rtol=0.05)
@@ -404,11 +438,12 @@ class TestNegBinomialFamily:
 # Test 7: QuasiPoisson
 # ===========================================================================
 
+
 class TestQuasiPoisson:
     """QuasiPoisson: same coefficients as Poisson, inflated SEs, dispersion."""
 
     def test_vs_statsmodels(self, data):
-        df, x1, x2, *_ = data
+        _df, x1, _x2, *_ = data
         # Generate overdispersed counts
         rng = np.random.RandomState(SEED + 1)
         eta = 0.5 + 0.2 * x1
@@ -426,8 +461,10 @@ class TestQuasiPoisson:
         sm_qp = sm.GLM(y, X_sm, family=smf.Poisson()).fit(scale="X2")
 
         rs_qp = rs.glm_dict(
-            response="y", terms={"x1": {"type": "linear"}},
-            data=df_qp, family="quasipoisson",
+            response="y",
+            terms={"x1": {"type": "linear"}},
+            data=df_qp,
+            family="quasipoisson",
         ).fit()
 
         # Point estimates should match Poisson
@@ -441,16 +478,23 @@ class TestQuasiPoisson:
 
         # SEs should be inflated relative to Poisson
         rs_se_qp = rs_qp.bse()
-        rs_se_pois = rs.glm_dict(
-            response="y", terms={"x1": {"type": "linear"}},
-            data=df_qp, family="poisson",
-        ).fit().bse()
+        rs_se_pois = (
+            rs.glm_dict(
+                response="y",
+                terms={"x1": {"type": "linear"}},
+                data=df_qp,
+                family="poisson",
+            )
+            .fit()
+            .bse()
+        )
         assert np.all(rs_se_qp > rs_se_pois), "QuasiPoisson SEs should exceed Poisson SEs"
 
 
 # ===========================================================================
 # Test 8: QuasiBinomial
 # ===========================================================================
+
 
 class TestQuasiBinomial:
     """QuasiBinomial: same coefficients as Binomial, inflated SEs."""
@@ -465,8 +509,10 @@ class TestQuasiBinomial:
         sm_qb = sm.GLM(y, X_sm, family=smf.Binomial()).fit(scale="X2")
 
         rs_qb = rs.glm_dict(
-            response="y", terms={"x1": {"type": "linear"}},
-            data=df_qb, family="quasibinomial",
+            response="y",
+            terms={"x1": {"type": "linear"}},
+            data=df_qb,
+            family="quasibinomial",
         ).fit()
 
         # Point estimates match Binomial
@@ -482,11 +528,12 @@ class TestQuasiBinomial:
 # Test 9: Poisson with exposure offset
 # ===========================================================================
 
+
 class TestPoissonOffset:
     """Poisson with log(exposure) offset: matches statsmodels and glum."""
 
     def test_vs_statsmodels(self, data):
-        df, x1, x2, cat, exposure, _ = data
+        df, x1, _x2, _cat, exposure, _ = data
         rng = np.random.RandomState(SEED)
         eta = -1.0 + 0.15 * x1
         y = rng.poisson(exposure * np.exp(eta)).astype(float)
@@ -494,14 +541,19 @@ class TestPoissonOffset:
         X_sm = sm.add_constant(x1)
         log_exposure = np.log(exposure)
         sm_res = sm.GLM(
-            y, X_sm, family=smf.Poisson(), offset=log_exposure,
+            y,
+            X_sm,
+            family=smf.Poisson(),
+            offset=log_exposure,
         ).fit()
 
         df_off = df.with_columns(pl.Series("y_off", y))
         rs_res = rs.glm_dict(
             response="y_off",
             terms={"x1": {"type": "linear"}},
-            data=df_off, family="poisson", offset="exposure",
+            data=df_off,
+            family="poisson",
+            offset="exposure",
         ).fit()
 
         np.testing.assert_allclose(rs_res.params, sm_res.params, atol=COEF_ATOL, rtol=COEF_RTOL)
@@ -510,14 +562,16 @@ class TestPoissonOffset:
         np.testing.assert_allclose(rs_res.fittedvalues, sm_pred_with_offset, rtol=PRED_RTOL)
 
     def test_vs_glum(self, data):
-        df, x1, x2, cat, exposure, _ = data
+        df, x1, _x2, _cat, exposure, _ = data
         rng = np.random.RandomState(SEED)
         eta = -1.0 + 0.15 * x1
         y = rng.poisson(exposure * np.exp(eta)).astype(float)
 
         X_np = x1.reshape(-1, 1)
         glum_model = GeneralizedLinearRegressor(
-            family="poisson", alpha=0, fit_intercept=True,
+            family="poisson",
+            alpha=0,
+            fit_intercept=True,
         )
         glum_model.fit(X_np, y, offset=np.log(exposure))
 
@@ -525,7 +579,9 @@ class TestPoissonOffset:
         rs_res = rs.glm_dict(
             response="y_off",
             terms={"x1": {"type": "linear"}},
-            data=df_off, family="poisson", offset="exposure",
+            data=df_off,
+            family="poisson",
+            offset="exposure",
         ).fit()
 
         glum_coefs = np.concatenate([[glum_model.intercept_], glum_model.coef_])
@@ -536,11 +592,12 @@ class TestPoissonOffset:
 # Test 10: Prior weights
 # ===========================================================================
 
+
 class TestPriorWeights:
     """Weighted GLM: Gaussian and Poisson with sample weights vs statsmodels."""
 
     def test_gaussian_weights(self, data):
-        df, x1, x2, cat, exposure, weight = data
+        df, x1, x2, _cat, _exposure, weight = data
         y = df["y_gauss"].to_numpy()
         X_sm = sm.add_constant(np.column_stack([x1, x2]))
 
@@ -549,13 +606,15 @@ class TestPriorWeights:
         rs_res = rs.glm_dict(
             response="y_gauss",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="gaussian", weights="weight",
+            data=df,
+            family="gaussian",
+            weights="weight",
         ).fit()
 
         np.testing.assert_allclose(rs_res.params, sm_res.params, atol=COEF_ATOL, rtol=COEF_RTOL)
 
     def test_poisson_weights(self, data):
-        df, x1, x2, cat, exposure, weight = data
+        df, x1, x2, _cat, _exposure, weight = data
         y = df["y_pois"].to_numpy()
         X_sm = sm.add_constant(np.column_stack([x1, x2]))
 
@@ -564,13 +623,15 @@ class TestPriorWeights:
         rs_res = rs.glm_dict(
             response="y_pois",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="poisson", weights="weight",
+            data=df,
+            family="poisson",
+            weights="weight",
         ).fit()
 
         np.testing.assert_allclose(rs_res.params, sm_res.params, atol=COEF_ATOL, rtol=COEF_RTOL)
 
     def test_poisson_weights_vs_glum(self, data):
-        df, x1, x2, cat, exposure, weight = data
+        df, x1, x2, _cat, _exposure, weight = data
         y = df["y_pois"].to_numpy()
         X_np = np.column_stack([x1, x2])
 
@@ -580,7 +641,9 @@ class TestPriorWeights:
         rs_res = rs.glm_dict(
             response="y_pois",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="poisson", weights="weight",
+            data=df,
+            family="poisson",
+            weights="weight",
         ).fit()
 
         glum_coefs = np.concatenate([[glum_model.intercept_], glum_model.coef_])
@@ -591,31 +654,32 @@ class TestPriorWeights:
 # Test 11: Multiple predictors (continuous + categorical)
 # ===========================================================================
 
+
 class TestMultiplePredictors:
     """Mixed continuous + categorical predictors vs statsmodels."""
 
     def test_continuous_and_categorical(self, data):
-        df, x1, x2, cat, *_ = data
+        df, x1, _x2, cat, *_ = data
         y = df["y_pois"].to_numpy()
 
         # Build statsmodels dummy encoding (drop first)
         import pandas as pd
+
         cat_dummies = pd.get_dummies(pd.Series(cat), drop_first=True, dtype=float)
-        X_sm = sm.add_constant(
-            np.column_stack([x1, cat_dummies.values])
-        )
+        X_sm = sm.add_constant(np.column_stack([x1, cat_dummies.values]))
         sm_res = sm.GLM(y, X_sm, family=smf.Poisson()).fit()
 
         rs_res = rs.glm_dict(
             response="y_pois",
             terms={"x1": {"type": "linear"}, "cat": {"type": "categorical"}},
-            data=df, family="poisson",
+            data=df,
+            family="poisson",
         ).fit()
 
         # Number of parameters should match
-        assert len(rs_res.params) == len(sm_res.params), (
-            f"Param count mismatch: rs={len(rs_res.params)} vs sm={len(sm_res.params)}"
-        )
+        assert len(rs_res.params) == len(
+            sm_res.params
+        ), f"Param count mismatch: rs={len(rs_res.params)} vs sm={len(sm_res.params)}"
 
         # Predictions should match (even if coefficient order differs due to encoding)
         np.testing.assert_allclose(
@@ -629,6 +693,7 @@ class TestMultiplePredictors:
 # Test 12: Residuals
 # ===========================================================================
 
+
 class TestResiduals:
     """Response, Pearson, deviance, working residuals vs statsmodels."""
 
@@ -641,27 +706,36 @@ class TestResiduals:
         rs_res = rs.glm_dict(
             response="y_pois",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="poisson",
+            data=df,
+            family="poisson",
         ).fit()
 
         # Response residuals: y - mu
         np.testing.assert_allclose(
-            rs_res.resid_response(), sm_res.resid_response, atol=RESID_ATOL,
+            rs_res.resid_response(),
+            sm_res.resid_response,
+            atol=RESID_ATOL,
         )
 
         # Pearson residuals: (y - mu) / sqrt(V(mu))
         np.testing.assert_allclose(
-            rs_res.resid_pearson(), sm_res.resid_pearson, atol=RESID_ATOL,
+            rs_res.resid_pearson(),
+            sm_res.resid_pearson,
+            atol=RESID_ATOL,
         )
 
         # Deviance residuals
         np.testing.assert_allclose(
-            rs_res.resid_deviance(), sm_res.resid_deviance, atol=RESID_ATOL,
+            rs_res.resid_deviance(),
+            sm_res.resid_deviance,
+            atol=RESID_ATOL,
         )
 
         # Working residuals
         np.testing.assert_allclose(
-            rs_res.resid_working(), sm_res.resid_working, atol=RESID_ATOL,
+            rs_res.resid_working(),
+            sm_res.resid_working,
+            atol=RESID_ATOL,
         )
 
     def test_gaussian_residuals(self, data):
@@ -673,7 +747,8 @@ class TestResiduals:
         rs_res = rs.glm_dict(
             response="y_gauss",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="gaussian",
+            data=df,
+            family="gaussian",
         ).fit()
 
         np.testing.assert_allclose(rs_res.resid_response(), sm_res.resid_response, atol=RESID_ATOL)
@@ -687,8 +762,10 @@ class TestResiduals:
 
         sm_res = sm.GLM(y, X_sm, family=smf.Gamma(smf.links.Log())).fit()
         rs_res = rs.glm_dict(
-            response="y_gamma", terms={"x1": {"type": "linear"}},
-            data=df, family="gamma",
+            response="y_gamma",
+            terms={"x1": {"type": "linear"}},
+            data=df,
+            family="gamma",
         ).fit()
 
         np.testing.assert_allclose(rs_res.resid_pearson(), sm_res.resid_pearson, atol=RESID_ATOL)
@@ -698,6 +775,7 @@ class TestResiduals:
 # ===========================================================================
 # Test 13: Robust standard errors (sandwich estimators)
 # ===========================================================================
+
 
 class TestRobustSE:
     """HC0, HC1, HC2, HC3 sandwich estimators vs statsmodels."""
@@ -712,11 +790,14 @@ class TestRobustSE:
         rs_res = rs.glm_dict(
             response="y_pois",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="poisson",
+            data=df,
+            family="poisson",
         ).fit(store_design_matrix=True)
 
         np.testing.assert_allclose(
-            rs_res.bse_robust("HC0"), sm_res.bse, rtol=0.05,
+            rs_res.bse_robust("HC0"),
+            sm_res.bse,
+            rtol=0.05,
         )
 
     def test_hc1_gaussian(self, data):
@@ -729,20 +810,24 @@ class TestRobustSE:
         rs_res = rs.glm_dict(
             response="y_gauss",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="gaussian",
+            data=df,
+            family="gaussian",
         ).fit(store_design_matrix=True)
 
         np.testing.assert_allclose(
-            rs_res.bse_robust("HC1"), sm_res.bse, rtol=0.05,
+            rs_res.bse_robust("HC1"),
+            sm_res.bse,
+            rtol=0.05,
         )
 
     def test_hc2_hc3_exist(self, data):
         """HC2 and HC3 should be computable without error."""
-        df, x1, x2, *_ = data
+        df, _x1, _x2, *_ = data
         rs_res = rs.glm_dict(
             response="y_gauss",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="gaussian",
+            data=df,
+            family="gaussian",
         ).fit(store_design_matrix=True)
 
         se_hc2 = rs_res.bse_robust("HC2")
@@ -757,6 +842,7 @@ class TestRobustSE:
 # Test 14: Confidence intervals
 # ===========================================================================
 
+
 class TestConfidenceIntervals:
     """Model-based confidence intervals vs statsmodels."""
 
@@ -769,7 +855,8 @@ class TestConfidenceIntervals:
         rs_res = rs.glm_dict(
             response="y_gauss",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="gaussian",
+            data=df,
+            family="gaussian",
         ).fit()
 
         rs_ci = rs_res.conf_int(0.05)
@@ -786,7 +873,8 @@ class TestConfidenceIntervals:
         rs_res = rs.glm_dict(
             response="y_pois",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="poisson",
+            data=df,
+            family="poisson",
         ).fit()
 
         rs_ci = rs_res.conf_int(0.05)
@@ -798,6 +886,7 @@ class TestConfidenceIntervals:
 # ===========================================================================
 # Test 15: z-values and p-values
 # ===========================================================================
+
 
 class TestZvaluesPvalues:
     """z-statistics and p-values vs statsmodels."""
@@ -811,7 +900,8 @@ class TestZvaluesPvalues:
         rs_res = rs.glm_dict(
             response="y_gauss",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="gaussian",
+            data=df,
+            family="gaussian",
         ).fit()
 
         np.testing.assert_allclose(rs_res.tvalues(), sm_res.tvalues, rtol=0.02)
@@ -826,7 +916,8 @@ class TestZvaluesPvalues:
         rs_res = rs.glm_dict(
             response="y_pois",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="poisson",
+            data=df,
+            family="poisson",
         ).fit()
 
         np.testing.assert_allclose(rs_res.tvalues(), sm_res.tvalues, rtol=0.02)
@@ -836,6 +927,7 @@ class TestZvaluesPvalues:
 # ===========================================================================
 # Test 16: Null deviance
 # ===========================================================================
+
 
 class TestNullDeviance:
     """Null (intercept-only) deviance vs statsmodels."""
@@ -849,7 +941,8 @@ class TestNullDeviance:
         rs_res = rs.glm_dict(
             response="y_gauss",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="gaussian",
+            data=df,
+            family="gaussian",
         ).fit()
 
         assert _close(rs_res.null_deviance(), sm_res.null_deviance, rtol=0.01)
@@ -863,7 +956,8 @@ class TestNullDeviance:
         rs_res = rs.glm_dict(
             response="y_pois",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="poisson",
+            data=df,
+            family="poisson",
         ).fit()
 
         assert _close(rs_res.null_deviance(), sm_res.null_deviance, rtol=0.01)
@@ -875,8 +969,10 @@ class TestNullDeviance:
 
         sm_res = sm.GLM(y, X_sm, family=smf.Gamma(smf.links.Log())).fit()
         rs_res = rs.glm_dict(
-            response="y_gamma", terms={"x1": {"type": "linear"}},
-            data=df, family="gamma",
+            response="y_gamma",
+            terms={"x1": {"type": "linear"}},
+            data=df,
+            family="gamma",
         ).fit()
 
         assert _close(rs_res.null_deviance(), sm_res.null_deviance, rtol=0.01)
@@ -885,6 +981,7 @@ class TestNullDeviance:
 # ===========================================================================
 # Test 17: Pearson chi2 and scale
 # ===========================================================================
+
 
 class TestPearsonScale:
     """Pearson chi-squared and scale (dispersion) vs statsmodels."""
@@ -898,7 +995,8 @@ class TestPearsonScale:
         rs_res = rs.glm_dict(
             response="y_gauss",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="gaussian",
+            data=df,
+            family="gaussian",
         ).fit()
 
         assert _close(rs_res.pearson_chi2(), sm_res.pearson_chi2, rtol=0.01)
@@ -911,8 +1009,10 @@ class TestPearsonScale:
 
         sm_res = sm.GLM(y, X_sm, family=smf.Gamma(smf.links.Log())).fit()
         rs_res = rs.glm_dict(
-            response="y_gamma", terms={"x1": {"type": "linear"}},
-            data=df, family="gamma",
+            response="y_gamma",
+            terms={"x1": {"type": "linear"}},
+            data=df,
+            family="gamma",
         ).fit()
 
         assert _close(rs_res.pearson_chi2(), sm_res.pearson_chi2, rtol=0.01)
@@ -922,6 +1022,7 @@ class TestPearsonScale:
 # ===========================================================================
 # Test 18-21: Regularization (Ridge, Lasso, Elastic Net, CV Path)
 # ===========================================================================
+
 
 class TestRidgeRegularization:
     """Ridge (L2) regularization: coefficient shrinkage vs glum."""
@@ -933,14 +1034,18 @@ class TestRidgeRegularization:
         alpha_val = 1.0
 
         glum_model = GeneralizedLinearRegressor(
-            family="poisson", alpha=alpha_val, l1_ratio=0.0, fit_intercept=True,
+            family="poisson",
+            alpha=alpha_val,
+            l1_ratio=0.0,
+            fit_intercept=True,
         )
         glum_model.fit(X_np, y)
 
         rs_res = rs.glm_dict(
             response="y_pois",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="poisson",
+            data=df,
+            family="poisson",
         ).fit(alpha=alpha_val, l1_ratio=0.0)
 
         glum_coefs = np.concatenate([[glum_model.intercept_], glum_model.coef_])
@@ -949,18 +1054,20 @@ class TestRidgeRegularization:
         np.testing.assert_allclose(rs_res.params[1:], glum_coefs[1:], atol=0.2, rtol=0.15)
 
     def test_ridge_shrinks_toward_zero(self, data):
-        df, x1, x2, *_ = data
+        df, _x1, _x2, *_ = data
 
         rs_unreg = rs.glm_dict(
             response="y_pois",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="poisson",
+            data=df,
+            family="poisson",
         ).fit()
 
         rs_ridge = rs.glm_dict(
             response="y_pois",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="poisson",
+            data=df,
+            family="poisson",
         ).fit(alpha=5.0, l1_ratio=0.0)
 
         # Ridge should shrink non-intercept coefficients toward zero
@@ -972,23 +1079,28 @@ class TestLassoRegularization:
 
     def test_lasso_sparsity(self, data):
         """Strong Lasso should zero out some coefficients."""
-        df, x1, x2, *_ = data
+        df, _x1, _x2, *_ = data
         rng = np.random.RandomState(SEED)
         # Add noise variables
-        df2 = df.with_columns([
-            pl.Series("noise1", rng.normal(0, 1, N)),
-            pl.Series("noise2", rng.normal(0, 1, N)),
-            pl.Series("noise3", rng.normal(0, 1, N)),
-        ])
+        df2 = df.with_columns(
+            [
+                pl.Series("noise1", rng.normal(0, 1, N)),
+                pl.Series("noise2", rng.normal(0, 1, N)),
+                pl.Series("noise3", rng.normal(0, 1, N)),
+            ]
+        )
 
         rs_lasso = rs.glm_dict(
             response="y_pois",
             terms={
-                "x1": {"type": "linear"}, "x2": {"type": "linear"},
-                "noise1": {"type": "linear"}, "noise2": {"type": "linear"},
+                "x1": {"type": "linear"},
+                "x2": {"type": "linear"},
+                "noise1": {"type": "linear"},
+                "noise2": {"type": "linear"},
                 "noise3": {"type": "linear"},
             },
-            data=df2, family="poisson",
+            data=df2,
+            family="poisson",
         ).fit(alpha=5.0, l1_ratio=1.0)  # Stronger alpha to force zeros
 
         # At least some noise coefficients should be zeroed
@@ -1001,24 +1113,27 @@ class TestElasticNet:
     """Elastic Net (L1+L2) regularization."""
 
     def test_elastic_net_intermediate(self, data):
-        df, x1, x2, *_ = data
+        df, _x1, _x2, *_ = data
 
-        rs_ridge = rs.glm_dict(
+        _rs_ridge = rs.glm_dict(
             response="y_pois",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="poisson",
+            data=df,
+            family="poisson",
         ).fit(alpha=1.0, l1_ratio=0.0)
 
-        rs_lasso = rs.glm_dict(
+        _rs_lasso = rs.glm_dict(
             response="y_pois",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="poisson",
+            data=df,
+            family="poisson",
         ).fit(alpha=1.0, l1_ratio=1.0)
 
         rs_enet = rs.glm_dict(
             response="y_pois",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="poisson",
+            data=df,
+            family="poisson",
         ).fit(alpha=1.0, l1_ratio=0.5)
 
         # Elastic net coefficients should generally be between ridge and lasso
@@ -1031,12 +1146,14 @@ class TestCVRegularizationPath:
     """Cross-validated regularization path."""
 
     def test_cv_ridge_runs(self, data):
-        df, x1, x2, *_ = data
+        df, _x1, _x2, *_ = data
 
         rs_cv = rs.glm_dict(
             response="y_pois",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="poisson", seed=42,
+            data=df,
+            family="poisson",
+            seed=42,
         ).fit(regularization="ridge")
 
         assert rs_cv.alpha >= 0
@@ -1045,30 +1162,36 @@ class TestCVRegularizationPath:
         assert len(rs_cv.regularization_path) > 0
 
     def test_cv_lasso_runs(self, data):
-        df, x1, x2, *_ = data
+        df, _x1, _x2, *_ = data
 
         rs_cv = rs.glm_dict(
             response="y_pois",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="poisson", seed=42,
+            data=df,
+            family="poisson",
+            seed=42,
         ).fit(regularization="lasso")
 
         assert rs_cv.alpha >= 0
         assert rs_cv.cv_deviance is not None
 
     def test_cv_1se_selection(self, data):
-        df, x1, x2, *_ = data
+        df, _x1, _x2, *_ = data
 
         rs_min = rs.glm_dict(
             response="y_pois",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="poisson", seed=42,
+            data=df,
+            family="poisson",
+            seed=42,
         ).fit(regularization="ridge", selection="min")
 
         rs_1se = rs.glm_dict(
             response="y_pois",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="poisson", seed=42,
+            data=df,
+            family="poisson",
+            seed=42,
         ).fit(regularization="ridge", selection="1se")
 
         # 1se should select >= alpha compared to min
@@ -1078,6 +1201,7 @@ class TestCVRegularizationPath:
 # ===========================================================================
 # Test 22-23: Spline basis functions
 # ===========================================================================
+
 
 class TestBSplineBasis:
     """B-spline basis matrix properties."""
@@ -1119,7 +1243,7 @@ class TestNaturalSplineBasis:
 
     def test_extrapolation_bounded(self):
         """Natural splines should not produce extreme values outside training range."""
-        x_train = np.linspace(1, 9, 100)
+        _x_train = np.linspace(1, 9, 100)
         x_extrap = np.array([0.5, 0.8, 9.2, 9.5])
         basis_extrap = rs.ns(x_extrap, df=4, boundary_knots=(1.0, 9.0))
         assert not np.any(np.isnan(basis_extrap))
@@ -1130,6 +1254,7 @@ class TestNaturalSplineBasis:
 # ===========================================================================
 # Test 24: Penalized smooth splines
 # ===========================================================================
+
 
 class TestPenalizedSmooth:
     """Penalized splines with automatic smoothing (GCV)."""
@@ -1143,7 +1268,8 @@ class TestPenalizedSmooth:
         rs_res = rs.glm_dict(
             response="y_smooth",
             terms={"x1": {"type": "bs"}},  # Default: penalized smooth, k=10
-            data=df_smooth, family="gaussian",
+            data=df_smooth,
+            family="gaussian",
         ).fit()
 
         assert rs_res.has_smooth_terms()
@@ -1160,7 +1286,8 @@ class TestPenalizedSmooth:
         rs_res = rs.glm_dict(
             response="y_smooth",
             terms={"x1": {"type": "bs"}},
-            data=df_smooth, family="gaussian",
+            data=df_smooth,
+            family="gaussian",
         ).fit()
 
         assert rs_res.gcv is not None
@@ -1170,6 +1297,7 @@ class TestPenalizedSmooth:
 # ===========================================================================
 # Test 25: Monotonic splines
 # ===========================================================================
+
 
 class TestMonotonicSplines:
     """Monotonic B-splines: fitted effect should respect constraints."""
@@ -1185,7 +1313,8 @@ class TestMonotonicSplines:
         rs_res = rs.glm_dict(
             response="y_mono",
             terms={"x1": {"type": "bs", "df": 5, "monotonicity": "increasing"}},
-            data=df_mono, family="gaussian",
+            data=df_mono,
+            family="gaussian",
         ).fit()
 
         # Evaluate predictions at a grid of unique sorted x values
@@ -1196,9 +1325,9 @@ class TestMonotonicSplines:
         # Check monotonicity with a small tolerance for numerical noise
         diffs = np.diff(preds)
         n_violations = np.sum(diffs < -0.01)
-        assert n_violations == 0, (
-            f"Monotone increasing spline: {n_violations} violations out of {len(diffs)} steps"
-        )
+        assert (
+            n_violations == 0
+        ), f"Monotone increasing spline: {n_violations} violations out of {len(diffs)} steps"
 
     def test_monotone_decreasing(self, data):
         df, x1, *_ = data
@@ -1210,7 +1339,8 @@ class TestMonotonicSplines:
         rs_res = rs.glm_dict(
             response="y_mono",
             terms={"x1": {"type": "bs", "df": 5, "monotonicity": "decreasing"}},
-            data=df_mono, family="gaussian",
+            data=df_mono,
+            family="gaussian",
         ).fit()
 
         x_grid = np.linspace(x1.min() + 0.5, x1.max() - 0.5, 50)
@@ -1219,14 +1349,15 @@ class TestMonotonicSplines:
 
         diffs = np.diff(preds)
         n_violations = np.sum(diffs > 0.01)
-        assert n_violations == 0, (
-            f"Monotone decreasing spline: {n_violations} violations out of {len(diffs)} steps"
-        )
+        assert (
+            n_violations == 0
+        ), f"Monotone decreasing spline: {n_violations} violations out of {len(diffs)} steps"
 
 
 # ===========================================================================
 # Test 26: Coefficient constraints
 # ===========================================================================
+
 
 class TestCoefficientConstraints:
     """Linear term monotonicity constraints."""
@@ -1240,7 +1371,8 @@ class TestCoefficientConstraints:
         rs_res = rs.glm_dict(
             response="y_con",
             terms={"x1": {"type": "linear", "monotonicity": "increasing"}},
-            data=df_con, family="poisson",
+            data=df_con,
+            family="poisson",
         ).fit()
 
         # The coefficient for x1 should be >= 0
@@ -1256,7 +1388,8 @@ class TestCoefficientConstraints:
         rs_res = rs.glm_dict(
             response="y_con",
             terms={"x1": {"type": "linear", "monotonicity": "decreasing"}},
-            data=df_con, family="poisson",
+            data=df_con,
+            family="poisson",
         ).fit()
 
         x1_coef = rs_res.params[1]
@@ -1267,17 +1400,17 @@ class TestCoefficientConstraints:
 # Test 27: Target encoding
 # ===========================================================================
 
+
 class TestTargetEncoding:
     """Ordered target encoding: no leakage, regularization, unseen levels."""
 
     def test_no_target_leakage(self):
         """Average of LOO-encoded values should differ from naive mean encoding."""
         rng = np.random.RandomState(SEED)
-        n = 500
         cats = np.array(["A"] * 250 + ["B"] * 250)
         target = np.concatenate([rng.normal(1, 0.5, 250), rng.normal(3, 0.5, 250)])
 
-        encoded, name, prior, stats = rs.target_encode(cats, target, "cat", seed=42)
+        encoded, _name, _prior, _stats = rs.target_encode(cats, target, "cat", seed=42)
 
         # For category A, the encoded value should NOT be exactly mean(target[A])
         a_mask = cats == "A"
@@ -1287,7 +1420,6 @@ class TestTargetEncoding:
         assert abs(te_a_mean - naive_a_mean) < 0.5, "TE mean too far from naive mean"
 
     def test_unseen_levels_get_prior(self):
-        rng = np.random.RandomState(SEED)
         cats = np.array(["A", "B", "A", "B", "A", "B"])
         target = np.array([1.0, 2.0, 1.0, 2.0, 1.0, 2.0])
 
@@ -1297,9 +1429,9 @@ class TestTargetEncoding:
         new_encoded = rs.apply_target_encoding(new_cats, stats, prior)
 
         # Unseen level C should get the prior (global mean)
-        assert _close(new_encoded[2], prior, atol=0.01), (
-            f"Unseen level should get prior {prior}, got {new_encoded[2]}"
-        )
+        assert _close(
+            new_encoded[2], prior, atol=0.01
+        ), f"Unseen level should get prior {prior}, got {new_encoded[2]}"
 
     def test_prior_weight_regularization(self):
         """Higher prior_weight should shrink rare categories more toward global mean."""
@@ -1322,13 +1454,14 @@ class TestTargetEncoding:
 # Test 28: Frequency encoding
 # ===========================================================================
 
+
 class TestFrequencyEncoding:
     """Frequency (count-based) encoding."""
 
     def test_basic_frequency_encoding(self):
         cats = np.array(["A", "A", "A", "B", "B", "C"])
         # Returns (encoded, name, level_counts, max_count, n_obs)
-        encoded, name, level_counts, max_count, n_obs = rs.frequency_encode(cats, "cat")
+        encoded, name, _level_counts, max_count, n_obs = rs.frequency_encode(cats, "cat")
 
         assert name == "FE(cat)"
         assert max_count == 3  # A appears 3 times
@@ -1354,6 +1487,7 @@ class TestFrequencyEncoding:
 # Test 29: Interactions
 # ===========================================================================
 
+
 class TestInteractions:
     """Interaction terms: cat×cat, cat×cont, cont×cont."""
 
@@ -1369,12 +1503,15 @@ class TestInteractions:
         rs_res = rs.glm_dict(
             response="y_int",
             terms={},
-            interactions=[{
-                "cat": {"type": "categorical"},
-                "cat2": {"type": "categorical"},
-                "include_main": True,
-            }],
-            data=df2, family="poisson",
+            interactions=[
+                {
+                    "cat": {"type": "categorical"},
+                    "cat2": {"type": "categorical"},
+                    "include_main": True,
+                }
+            ],
+            data=df2,
+            family="poisson",
         ).fit()
 
         # Should have intercept + main effects + interaction terms
@@ -1388,12 +1525,15 @@ class TestInteractions:
         rs_res = rs.glm_dict(
             response="y_int",
             terms={},
-            interactions=[{
-                "x1": {"type": "linear"},
-                "cat": {"type": "categorical"},
-                "include_main": True,
-            }],
-            data=df2, family="poisson",
+            interactions=[
+                {
+                    "x1": {"type": "linear"},
+                    "cat": {"type": "categorical"},
+                    "include_main": True,
+                }
+            ],
+            data=df2,
+            family="poisson",
         ).fit()
 
         assert len(rs_res.params) > 4, "Cat×Cont interaction should produce multiple columns"
@@ -1406,12 +1546,15 @@ class TestInteractions:
         rs_res = rs.glm_dict(
             response="y_int",
             terms={},
-            interactions=[{
-                "x1": {"type": "linear"},
-                "x2": {"type": "linear"},
-                "include_main": True,
-            }],
-            data=df2, family="poisson",
+            interactions=[
+                {
+                    "x1": {"type": "linear"},
+                    "x2": {"type": "linear"},
+                    "include_main": True,
+                }
+            ],
+            data=df2,
+            family="poisson",
         ).fit()
 
         # Should have intercept + x1 + x2 + x1:x2
@@ -1421,6 +1564,7 @@ class TestInteractions:
 # ===========================================================================
 # Test 30: TE & FE interactions
 # ===========================================================================
+
 
 class TestTEFEInteractions:
     """Target encoding and frequency encoding for interaction terms."""
@@ -1436,12 +1580,16 @@ class TestTEFEInteractions:
         rs_res = rs.glm_dict(
             response="y_te",
             terms={},
-            interactions=[{
-                "cat": {"type": "categorical"},
-                "cat2": {"type": "categorical"},
-                "target_encoding": True,
-            }],
-            data=df2, family="poisson", seed=42,
+            interactions=[
+                {
+                    "cat": {"type": "categorical"},
+                    "cat2": {"type": "categorical"},
+                    "target_encoding": True,
+                }
+            ],
+            data=df2,
+            family="poisson",
+            seed=42,
         ).fit()
 
         # TE interaction produces a single column
@@ -1461,12 +1609,15 @@ class TestTEFEInteractions:
         rs_res = rs.glm_dict(
             response="y_fe",
             terms={"x1": {"type": "linear"}},
-            interactions=[{
-                "cat": {"type": "categorical"},
-                "cat2": {"type": "categorical"},
-                "frequency_encoding": True,
-            }],
-            data=df2, family="poisson",
+            interactions=[
+                {
+                    "cat": {"type": "categorical"},
+                    "cat2": {"type": "categorical"},
+                    "frequency_encoding": True,
+                }
+            ],
+            data=df2,
+            family="poisson",
         ).fit()
 
         fe_names = [n for n in rs_res.feature_names if "FE(" in n]
@@ -1482,13 +1633,14 @@ class TestTEFEInteractions:
 # Test 31: Expression terms
 # ===========================================================================
 
+
 class TestExpressionTerms:
     """Expression terms: I(x**2), I(x/1000), compound expressions."""
 
     def test_quadratic_expression(self, data):
         df, x1, *_ = data
         rng = np.random.RandomState(SEED)
-        y = 2.0 + 0.5 * x1 - 0.05 * x1 ** 2 + rng.normal(0, 1, N)
+        y = 2.0 + 0.5 * x1 - 0.05 * x1**2 + rng.normal(0, 1, N)
         df2 = df.with_columns(pl.Series("y_expr", y))
 
         rs_res = rs.glm_dict(
@@ -1497,7 +1649,8 @@ class TestExpressionTerms:
                 "x1": {"type": "linear"},
                 "x1_sq": {"type": "expression", "expr": "x1 ** 2"},
             },
-            data=df2, family="gaussian",
+            data=df2,
+            family="gaussian",
         ).fit()
 
         # Should have 3 params: intercept, x1, x1^2
@@ -1506,7 +1659,7 @@ class TestExpressionTerms:
         assert rs_res.params[2] < 0, "Quadratic term should be negative"
 
     def test_division_expression(self, data):
-        df, x1, *_ = data
+        df, _x1, *_ = data
         rng = np.random.RandomState(SEED)
         y = rng.normal(5, 1, N)
         df2 = df.with_columns(pl.Series("y_div", y))
@@ -1514,7 +1667,8 @@ class TestExpressionTerms:
         rs_res = rs.glm_dict(
             response="y_div",
             terms={"x1_scaled": {"type": "expression", "expr": "x1 / 10"}},
-            data=df2, family="gaussian",
+            data=df2,
+            family="gaussian",
         ).fit()
 
         assert len(rs_res.params) == 2  # intercept + scaled x1
@@ -1523,6 +1677,7 @@ class TestExpressionTerms:
 # ===========================================================================
 # Test 32: Prediction on new data
 # ===========================================================================
+
 
 class TestPrediction:
     """Predict on new data matches manual computation."""
@@ -1533,7 +1688,8 @@ class TestPrediction:
         rs_res = rs.glm_dict(
             response="y_pois",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="poisson",
+            data=df,
+            family="poisson",
         ).fit()
 
         # Predict on same data
@@ -1547,7 +1703,7 @@ class TestPrediction:
         np.testing.assert_allclose(preds, mu_manual, rtol=1e-6)
 
     def test_predict_with_offset(self, data):
-        df, x1, x2, cat, exposure, _ = data
+        df, x1, _x2, _cat, exposure, _ = data
         rng = np.random.RandomState(SEED)
         y = rng.poisson(exposure * np.exp(-0.5 + 0.1 * x1)).astype(float)
         df2 = df.with_columns(pl.Series("y_off", y))
@@ -1555,7 +1711,9 @@ class TestPrediction:
         rs_res = rs.glm_dict(
             response="y_off",
             terms={"x1": {"type": "linear"}},
-            data=df2, family="poisson", offset="exposure",
+            data=df2,
+            family="poisson",
+            offset="exposure",
         ).fit()
 
         # Predict on new data with offset
@@ -1573,7 +1731,8 @@ class TestPrediction:
         rs_res = rs.glm_dict(
             response="y_binom",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="binomial",
+            data=df,
+            family="binomial",
         ).fit()
 
         preds = rs_res.predict(df)
@@ -1589,6 +1748,7 @@ class TestPrediction:
 # Test 33: Model serialization
 # ===========================================================================
 
+
 class TestSerialization:
     """to_bytes()/from_bytes() roundtrip."""
 
@@ -1598,7 +1758,8 @@ class TestSerialization:
         rs_res = rs.glm_dict(
             response="y_pois",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="poisson",
+            data=df,
+            family="poisson",
         ).fit()
 
         model_bytes = rs_res.to_bytes()
@@ -1618,7 +1779,8 @@ class TestSerialization:
         rs_res = rs.glm_dict(
             response="y_pois",
             terms={"x1": {"type": "linear"}, "cat": {"type": "categorical"}},
-            data=df, family="poisson",
+            data=df,
+            family="poisson",
         ).fit()
 
         model_bytes = rs_res.to_bytes()
@@ -1634,7 +1796,9 @@ class TestSerialization:
         rs_res = rs.glm_dict(
             response="y_pois",
             terms={"x1": {"type": "linear"}, "cat": {"type": "target_encoding"}},
-            data=df, family="poisson", seed=42,
+            data=df,
+            family="poisson",
+            seed=42,
         ).fit()
 
         model_bytes = rs_res.to_bytes()
@@ -1649,47 +1813,55 @@ class TestSerialization:
 # Test 34: Design matrix validation
 # ===========================================================================
 
+
 class TestDesignMatrixValidation:
     """Design matrix issues: collinearity detection, convergence with singular data."""
 
     def test_detects_zero_variance_at_fit(self):
         """Fitting with a constant column should fail or warn about singularity."""
         rng = np.random.RandomState(SEED)
-        df = pl.DataFrame({
-            "y": rng.poisson(2, 100).astype(float),
-            "x1": rng.normal(0, 1, 100),
-            "constant": np.ones(100),  # zero variance -> collinear with intercept
-        })
+        df = pl.DataFrame(
+            {
+                "y": rng.poisson(2, 100).astype(float),
+                "x1": rng.normal(0, 1, 100),
+                "constant": np.ones(100),  # zero variance -> collinear with intercept
+            }
+        )
 
         # This should raise due to singular matrix (constant + intercept)
         with pytest.raises((ValueError, Exception)):
             rs.glm_dict(
                 response="y",
                 terms={"x1": {"type": "linear"}, "constant": {"type": "linear"}},
-                data=df, family="poisson",
+                data=df,
+                family="poisson",
             ).fit()
 
     def test_detects_perfect_collinearity_at_fit(self):
         """Fitting with perfectly collinear columns should fail."""
         rng = np.random.RandomState(SEED)
         x = rng.normal(0, 1, 100)
-        df = pl.DataFrame({
-            "y": rng.poisson(2, 100).astype(float),
-            "x1": x,
-            "x2": 2.0 * x,  # perfectly collinear
-        })
+        df = pl.DataFrame(
+            {
+                "y": rng.poisson(2, 100).astype(float),
+                "x1": x,
+                "x2": 2.0 * x,  # perfectly collinear
+            }
+        )
 
         with pytest.raises((ValueError, Exception)):
             rs.glm_dict(
                 response="y",
                 terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-                data=df, family="poisson",
+                data=df,
+                family="poisson",
             ).fit()
 
 
 # ===========================================================================
 # Test 35: Non-canonical links
 # ===========================================================================
+
 
 class TestNonCanonicalLinks:
     """Non-default link functions vs statsmodels."""
@@ -1704,7 +1876,9 @@ class TestNonCanonicalLinks:
         rs_res = rs.glm_dict(
             response="y_gamma",
             terms={"x1": {"type": "linear"}},
-            data=df, family="gaussian", link="log",
+            data=df,
+            family="gaussian",
+            link="log",
         ).fit()
 
         np.testing.assert_allclose(rs_res.params, sm_res.params, atol=COEF_ATOL, rtol=COEF_RTOL)
@@ -1715,16 +1889,18 @@ class TestNonCanonicalLinks:
 # Test 36: Diagnostics calibration
 # ===========================================================================
 
+
 class TestDiagnosticsCalibration:
     """Calibration metrics: A/E ratio, decile calibration."""
 
     def test_ae_ratio(self, data):
-        df, x1, x2, *_ = data
+        df, _x1, _x2, *_ = data
 
         rs_res = rs.glm_dict(
             response="y_pois",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="poisson",
+            data=df,
+            family="poisson",
         ).fit()
 
         diag = rs_res.diagnostics(
@@ -1743,12 +1919,13 @@ class TestDiagnosticsCalibration:
         assert 0.90 <= ae <= 1.10, f"Training A/E should be ~1.0, got {ae:.4f}"
 
     def test_calibration_exists(self, data):
-        df, x1, x2, *_ = data
+        df, _x1, _x2, *_ = data
 
         rs_res = rs.glm_dict(
             response="y_binom",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="binomial",
+            data=df,
+            family="binomial",
         ).fit()
 
         diag = rs_res.diagnostics(train_data=df)
@@ -1759,16 +1936,18 @@ class TestDiagnosticsCalibration:
 # Test 37: Diagnostics discrimination (Gini)
 # ===========================================================================
 
+
 class TestDiagnosticsDiscrimination:
     """Gini coefficient and model comparison metrics."""
 
     def test_model_comparison_metrics(self, data):
-        df, x1, x2, *_ = data
+        df, _x1, _x2, *_ = data
 
         rs_res = rs.glm_dict(
             response="y_pois",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="poisson",
+            data=df,
+            family="poisson",
         ).fit()
 
         diag = rs_res.diagnostics(train_data=df)
@@ -1781,12 +1960,13 @@ class TestDiagnosticsDiscrimination:
 
     def test_diagnostics_json_contains_metrics(self, data):
         """Diagnostics JSON should contain key metrics."""
-        df, x1, x2, *_ = data
+        df, _x1, _x2, *_ = data
 
         rs_res = rs.glm_dict(
             response="y_pois",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="poisson",
+            data=df,
+            family="poisson",
         ).fit()
 
         json_str = rs_res.diagnostics_json(train_data=df, continuous_factors=["x1"])
@@ -1799,6 +1979,7 @@ class TestDiagnosticsDiscrimination:
 # Test 38: Edge cases
 # ===========================================================================
 
+
 class TestEdgeCases:
     """Edge cases: intercept-only, sparse categories, zero counts."""
 
@@ -1808,7 +1989,8 @@ class TestEdgeCases:
         rs_res = rs.glm_dict(
             response="y_pois",
             terms={},
-            data=df, family="poisson",
+            data=df,
+            family="poisson",
         ).fit()
 
         # Should have just the intercept
@@ -1821,17 +2003,20 @@ class TestEdgeCases:
     def test_all_zero_counts(self):
         """Model should handle all-zero response gracefully."""
         rng = np.random.RandomState(SEED)
-        df = pl.DataFrame({
-            "y": np.zeros(100),
-            "x1": rng.normal(0, 1, 100),
-        })
+        df = pl.DataFrame(
+            {
+                "y": np.zeros(100),
+                "x1": rng.normal(0, 1, 100),
+            }
+        )
 
         # This might converge to very negative intercept or warn
         try:
             rs_res = rs.glm_dict(
                 response="y",
                 terms={"x1": {"type": "linear"}},
-                data=df, family="poisson",
+                data=df,
+                family="poisson",
             ).fit()
             # If it converges, predictions should be near zero
             assert np.all(rs_res.fittedvalues < 1.0)
@@ -1845,17 +2030,21 @@ class TestEdgeCases:
         n = 200
         # Mix of common and rare categories
         cats = [f"cat_{i % 20}" for i in range(n)]  # 20 cats, ~10 obs each
-        df = pl.DataFrame({
-            "y": rng.poisson(2, n).astype(float),
-            "x1": rng.normal(0, 1, n),
-            "many_cats": cats,
-        })
+        df = pl.DataFrame(
+            {
+                "y": rng.poisson(2, n).astype(float),
+                "x1": rng.normal(0, 1, n),
+                "many_cats": cats,
+            }
+        )
 
         # Should work with target encoding (rare categories shrink to prior)
         rs_res = rs.glm_dict(
             response="y",
             terms={"x1": {"type": "linear"}, "many_cats": {"type": "target_encoding"}},
-            data=df, family="poisson", seed=42,
+            data=df,
+            family="poisson",
+            seed=42,
         ).fit()
 
         assert len(rs_res.params) == 3  # intercept + x1 + TE(many_cats)
@@ -1865,15 +2054,19 @@ class TestEdgeCases:
         rng = np.random.RandomState(SEED)
         n = 1000
         cats = rng.choice([f"level_{i}" for i in range(200)], n)
-        df = pl.DataFrame({
-            "y": rng.poisson(2, n),
-            "high_card": cats,
-        })
+        df = pl.DataFrame(
+            {
+                "y": rng.poisson(2, n),
+                "high_card": cats,
+            }
+        )
 
         rs_res = rs.glm_dict(
             response="y",
             terms={"high_card": {"type": "target_encoding"}},
-            data=df, family="poisson", seed=42,
+            data=df,
+            family="poisson",
+            seed=42,
         ).fit()
 
         # TE produces single column regardless of cardinality
@@ -1883,6 +2076,7 @@ class TestEdgeCases:
 # ===========================================================================
 # Test 39: Numerical stability at scale
 # ===========================================================================
+
 
 class TestNumericalStability:
     """Large dataset correctness and stability."""
@@ -1903,7 +2097,10 @@ class TestNumericalStability:
         df = pl.DataFrame(data_dict)
 
         rs_res = rs.glm_dict(
-            response="y", terms=terms, data=df, family="poisson",
+            response="y",
+            terms=terms,
+            data=df,
+            family="poisson",
         ).fit()
 
         assert rs_res.converged, "Model should converge on large clean data"
@@ -1923,7 +2120,8 @@ class TestNumericalStability:
         rs_res = rs.glm_dict(
             response="y",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="poisson",
+            data=df,
+            family="poisson",
         ).fit()
 
         # Should converge (possibly with large SEs)
@@ -1933,6 +2131,7 @@ class TestNumericalStability:
 # ===========================================================================
 # Test 40: Categorical encoding consistency
 # ===========================================================================
+
 
 class TestCategoricalEncoding:
     """Dummy encoding: reference level, unseen levels in prediction."""
@@ -1944,14 +2143,15 @@ class TestCategoricalEncoding:
         rs_res = rs.glm_dict(
             response="y_pois",
             terms={"x1": {"type": "linear"}, "cat": {"type": "categorical"}},
-            data=df, family="poisson",
+            data=df,
+            family="poisson",
         ).fit()
 
         # Should have intercept + x1 + (n_levels - 1) dummies
         expected_params = 1 + 1 + (len(unique_cats) - 1)
-        assert len(rs_res.params) == expected_params, (
-            f"Expected {expected_params} params, got {len(rs_res.params)}"
-        )
+        assert (
+            len(rs_res.params) == expected_params
+        ), f"Expected {expected_params} params, got {len(rs_res.params)}"
 
     def test_predict_on_subset(self, data):
         """Predict works when new data has fewer categorical levels."""
@@ -1960,7 +2160,8 @@ class TestCategoricalEncoding:
         rs_res = rs.glm_dict(
             response="y_pois",
             terms={"x1": {"type": "linear"}, "cat": {"type": "categorical"}},
-            data=df, family="poisson",
+            data=df,
+            family="poisson",
         ).fit()
 
         # Predict on subset with only 2 categories
@@ -1974,6 +2175,7 @@ class TestCategoricalEncoding:
 # Additional: Summary and diagnostics JSON
 # ===========================================================================
 
+
 class TestSummaryOutput:
     """Summary string and diagnostics JSON generation."""
 
@@ -1982,7 +2184,8 @@ class TestSummaryOutput:
         rs_res = rs.glm_dict(
             response="y_pois",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="poisson",
+            data=df,
+            family="poisson",
         ).fit()
 
         summary_str = rs_res.summary()
@@ -1995,7 +2198,8 @@ class TestSummaryOutput:
         rs_res = rs.glm_dict(
             response="y_pois",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="poisson",
+            data=df,
+            family="poisson",
         ).fit()
 
         ct = rs_res.coef_table()
@@ -2008,7 +2212,8 @@ class TestSummaryOutput:
         rs_res = rs.glm_dict(
             response="y_pois",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="poisson",
+            data=df,
+            family="poisson",
         ).fit()
 
         json_str = rs_res.diagnostics_json(
@@ -2022,12 +2227,15 @@ class TestSummaryOutput:
         rs_res = rs.glm_dict(
             response="y_pois",
             terms={"x1": {"type": "linear"}, "x2": {"type": "linear"}},
-            data=df, family="poisson",
+            data=df,
+            family="poisson",
         ).fit()
 
         rel = rs_res.relativities()
         assert "Relativity" in rel.columns
         # Relativity = exp(coef), so intercept relativity is exp(intercept)
         np.testing.assert_allclose(
-            rel["Relativity"].to_numpy(), np.exp(rs_res.params), rtol=1e-10,
+            rel["Relativity"].to_numpy(),
+            np.exp(rs_res.params),
+            rtol=1e-10,
         )

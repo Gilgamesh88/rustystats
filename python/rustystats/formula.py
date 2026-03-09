@@ -167,6 +167,73 @@ def _get_column(data: pl.DataFrame, column: str) -> np.ndarray:
     return data[column].to_numpy()
 
 
+def _extract_needed_columns(
+    terms: dict[str, dict[str, Any]],
+    response: str | None = None,
+    interactions: list[dict[str, Any]] | None = None,
+    offset: str | np.ndarray | None = None,
+    weights: str | np.ndarray | None = None,
+    complement: str | np.ndarray | None = None,
+) -> set[str]:
+    """Extract all DataFrame column names needed to build this model.
+
+    Parameters
+    ----------
+    terms : dict
+        Term specifications (same format as glm_dict).
+    response : str, optional
+        Response column name. Omit for prediction (no response needed).
+    interactions, offset, weights, complement
+        Same as glm_dict parameters.
+    """
+    import re
+
+    cols: set[str] = set()
+    if response is not None:
+        cols.add(response)
+
+    for var_name, spec in terms.items():
+        term_type = spec.get("type", "linear")
+        if term_type == "expression":
+            expr = spec["expr"]
+            for token in re.findall(r"\b([A-Za-z_]\w*)\b", expr):
+                cols.add(token)
+        else:
+            cols.add(var_name)
+
+    if interactions:
+        for ix in interactions:
+            for key in ix:
+                if key in ("include_main", "target_encoding", "frequency_encoding", "prior_weight"):
+                    continue
+                cols.add(key)
+
+    if isinstance(offset, str):
+        cols.add(offset)
+    if isinstance(weights, str):
+        cols.add(weights)
+    if isinstance(complement, str):
+        cols.add(complement)
+
+    return cols
+
+
+def _collect_lazyframe(
+    data: pl.DataFrame | pl.LazyFrame,
+    needed_columns: set[str],
+) -> pl.DataFrame:
+    """If data is a LazyFrame, select only needed columns and collect. Otherwise return as-is."""
+    import polars as pl
+
+    if not isinstance(data, pl.LazyFrame):
+        return data
+
+    if needed_columns:
+        return data.select(sorted(needed_columns)).collect()
+
+    return data.collect()
+
+
 # Import from interactions module (the canonical implementation)
 from rustystats.interactions import InteractionBuilder
 
@@ -1400,7 +1467,7 @@ class GLMModel:
 
     def predict(
         self,
-        new_data: pl.DataFrame,
+        new_data: pl.DataFrame | pl.LazyFrame,
         offset: str | np.ndarray | None = None,
         complement: str | np.ndarray | None = None,
     ) -> np.ndarray:
@@ -1409,8 +1476,9 @@ class GLMModel:
 
         Parameters
         ----------
-        new_data : pl.DataFrame
+        new_data : pl.DataFrame or pl.LazyFrame
             New data to predict on. Must have the same columns as training data.
+            If a LazyFrame, only needed columns are collected.
         offset : str or array-like, optional
             Offset for new data. If None and the model was fit with an offset
             column name, that column will be extracted from new_data.
@@ -1441,6 +1509,18 @@ class GLMModel:
                 "Cannot predict: model was not fitted with formula API. "
                 "Use fittedvalues for training data predictions."
             )
+
+        # Resolve LazyFrame: select only columns needed for prediction
+        if self._terms_dict is not None:
+            needed = _extract_needed_columns(
+                terms=self._terms_dict,
+                interactions=self._interactions_spec,
+                offset=offset if offset is not None else self._offset_spec,
+                complement=complement if complement is not None else self._complement_spec,
+            )
+            new_data = _collect_lazyframe(new_data, needed)
+        else:
+            new_data = _collect_lazyframe(new_data, set())
 
         # Build design matrix for new data using stored encoding state
         X_new = self._builder.transform_new_data(new_data)
@@ -2211,7 +2291,7 @@ class FormulaGLMDict(_GLMBase):
         self._offset_spec = offset
         self._weights_spec = weights
         self._seed = seed
-        self._complement_spec = complement if isinstance(complement, (str, GLMModel)) else None
+        self._complement_spec = complement if isinstance(complement, str | GLMModel) else None
         self._complement_values = None  # Set by _process_complement
 
         # Build formula string for compatibility (used in results/diagnostics)
@@ -2475,7 +2555,7 @@ class FormulaGLMDict(_GLMBase):
 def glm_dict(
     response: str,
     terms: dict[str, dict[str, Any]],
-    data: pl.DataFrame,
+    data: pl.DataFrame | pl.LazyFrame,
     interactions: list[dict[str, Any]] | None = None,
     intercept: bool = True,
     family: str = "gaussian",
@@ -2511,8 +2591,10 @@ def glm_dict(
         - ``{"type": "expression", "expr": "x**2"}`` - expression
         - ``{"type": "linear", "monotonicity": "increasing"}`` - constrained
 
-    data : pl.DataFrame
-        Polars DataFrame containing the data.
+    data : pl.DataFrame or pl.LazyFrame
+        Polars DataFrame or LazyFrame containing the data. If a LazyFrame
+        is passed, only the columns needed by the model are collected,
+        enabling optimized reads from Parquet/CSV scans.
     interactions : list of dict, optional
         List of interaction specifications. Each is a dict with variable
         names as keys and their specs as values, plus 'include_main'.
@@ -2561,6 +2643,16 @@ def glm_dict(
     ...     offset="Exposure",
     ... ).fit()
 
+    >>> # LazyFrame: only needed columns are collected
+    >>> lf = pl.scan_parquet("insurance.parquet")
+    >>> result = rs.glm_dict(
+    ...     response="ClaimCount",
+    ...     terms={"VehAge": {"type": "linear"}, "Region": {"type": "categorical"}},
+    ...     data=lf,
+    ...     family="poisson",
+    ...     offset="Exposure",
+    ... ).fit()
+
     >>> # Lasso credibility: shrink state model toward countrywide rates
     >>> state_result = rs.glm_dict(
     ...     response="ClaimCount",
@@ -2574,6 +2666,17 @@ def glm_dict(
     ...     complement="countrywide_rate",
     ... ).fit(regularization="lasso")
     """
+    # Resolve LazyFrame: select only needed columns, then collect
+    needed = _extract_needed_columns(
+        terms,
+        response=response,
+        interactions=interactions,
+        offset=offset,
+        weights=weights,
+        complement=complement,
+    )
+    data = _collect_lazyframe(data, needed)
+
     return FormulaGLMDict(
         response=response,
         terms=terms,

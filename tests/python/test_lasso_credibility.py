@@ -630,9 +630,7 @@ class TestComplementPrediction:
 
         preds_with = result.predict(poisson_data)  # auto-applies cw_rate
         # Use complement=1.0 (log(1)=0, effectively no complement)
-        preds_neutral = result.predict(
-            poisson_data, complement=np.ones(len(poisson_data))
-        )
+        preds_neutral = result.predict(poisson_data, complement=np.ones(len(poisson_data)))
 
         # These should differ since cw_rate is not all ones
         assert not np.allclose(preds_with, preds_neutral)
