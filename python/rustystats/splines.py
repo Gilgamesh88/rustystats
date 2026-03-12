@@ -448,27 +448,35 @@ class SplineTerm:
         # On subsequent calls (prediction), reuse the stored boundary knots
         x_arr = np.asarray(x).ravel()
         if self._computed_boundary_knots is None:
-            # First call - compute and store knots using Rust for consistency
-            from rustystats._rustystats import compute_knots_natural_py, compute_knots_py
+            if self._computed_internal_knots is not None:
+                # Explicit knots were pre-set — only compute boundary knots
+                bk = self.boundary_knots
+                if bk is not None:
+                    self._computed_boundary_knots = (float(bk[0]), float(bk[1]))
+                else:
+                    self._computed_boundary_knots = (float(x_arr.min()), float(x_arr.max()))
+            else:
+                # Auto-compute knots from data using Rust for consistency
+                from rustystats._rustystats import compute_knots_natural_py, compute_knots_py
 
-            bk = self.boundary_knots  # user-specified or None
+                bk = self.boundary_knots  # user-specified or None
 
-            if self.spline_type == "bs":
-                interior, (x_min, x_max) = compute_knots_py(
-                    x_arr,
-                    self.df,
-                    self.degree,
-                    bk,
-                )
-            else:  # ns, ms
-                interior, (x_min, x_max) = compute_knots_natural_py(
-                    x_arr,
-                    self.df,
-                    bk,
-                )
+                if self.spline_type == "bs":
+                    interior, (x_min, x_max) = compute_knots_py(
+                        x_arr,
+                        self.df,
+                        self.degree,
+                        bk,
+                    )
+                else:  # ns, ms
+                    interior, (x_min, x_max) = compute_knots_natural_py(
+                        x_arr,
+                        self.df,
+                        bk,
+                    )
 
-            self._computed_boundary_knots = (x_min, x_max)
-            self._computed_internal_knots = list(interior)
+                self._computed_boundary_knots = (x_min, x_max)
+                self._computed_internal_knots = list(interior)
 
         # Use stored boundary knots for basis computation
         boundary_knots_to_use = self._computed_boundary_knots

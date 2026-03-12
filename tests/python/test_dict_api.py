@@ -2304,5 +2304,159 @@ class TestLazyFrameIntegration:
             loaded.predict(lf_missing)
 
 
+# =============================================================================
+# Explicit Knots Tests
+# =============================================================================
+
+
+class TestExplicitKnots:
+    """Test explicit knot placement for bs() and ns() splines."""
+
+    @pytest.fixture
+    def sample_data(self):
+        np.random.seed(42)
+        n = 200
+        x = np.random.uniform(0, 10, n)
+        return pl.DataFrame(
+            {
+                "y": np.random.poisson(np.exp(0.5 + 0.1 * x), n),
+                "x1": x,
+                "x2": np.random.uniform(0, 10, n),
+            }
+        )
+
+    def test_bs_explicit_knots(self, sample_data):
+        """bs with explicit knots converges and has correct param count."""
+        knots = [2.0, 5.0, 8.0]
+        # degree=3 (default), so df = len(knots) + degree + 1 = 7
+        result = rs.glm_dict(
+            response="y",
+            terms={"x1": {"type": "bs", "knots": knots}},
+            data=sample_data,
+            family="poisson",
+        ).fit()
+        assert result.converged
+        # 6 spline columns + intercept = 7 params (len(knots) + degree = 3 + 3 = 6)
+        assert len(result.params) == 7
+
+    def test_bs_explicit_knots_monotonicity(self, sample_data):
+        """bs with explicit knots and monotonicity constraint converges."""
+        knots = [3.0, 6.0]
+        result = rs.glm_dict(
+            response="y",
+            terms={"x1": {"type": "bs", "knots": knots, "monotonicity": "increasing"}},
+            data=sample_data,
+            family="poisson",
+        ).fit()
+        assert result.converged
+
+    def test_ns_explicit_knots(self, sample_data):
+        """ns with explicit knots converges and has correct param count."""
+        knots = [2.0, 5.0, 8.0]
+        # ns: df = len(knots) + 1 = 4
+        result = rs.glm_dict(
+            response="y",
+            terms={"x1": {"type": "ns", "knots": knots}},
+            data=sample_data,
+            family="poisson",
+        ).fit()
+        assert result.converged
+        # 3 spline columns + intercept = 4 params (len(knots) = 3)
+        assert len(result.params) == 4
+
+    def test_ns_explicit_knots_with_boundary_knots(self, sample_data):
+        """ns with explicit knots and boundary_knots converges."""
+        knots = [3.0, 7.0]
+        result = rs.glm_dict(
+            response="y",
+            terms={"x1": {"type": "ns", "knots": knots, "boundary_knots": (0.0, 10.0)}},
+            data=sample_data,
+            family="poisson",
+        ).fit()
+        assert result.converged
+        assert len(result.params) == 3  # 2 spline cols + intercept
+
+    def test_explicit_knots_rejects_df(self, sample_data):
+        """Cannot specify both knots and df."""
+        with pytest.raises(rs.ValidationError, match="Cannot specify both"):
+            rs.glm_dict(
+                response="y",
+                terms={"x1": {"type": "bs", "knots": [3.0, 6.0], "df": 5}},
+                data=sample_data,
+            )
+
+    def test_explicit_knots_rejects_k(self, sample_data):
+        """Cannot specify both knots and k."""
+        with pytest.raises(rs.ValidationError, match="Cannot specify both"):
+            rs.glm_dict(
+                response="y",
+                terms={"x1": {"type": "ns", "knots": [3.0, 6.0], "k": 10}},
+                data=sample_data,
+            )
+
+    def test_explicit_knots_empty(self, sample_data):
+        """Empty knots list raises ValidationError."""
+        with pytest.raises(rs.ValidationError, match="non-empty"):
+            rs.glm_dict(
+                response="y",
+                terms={"x1": {"type": "bs", "knots": []}},
+                data=sample_data,
+            )
+
+    def test_explicit_knots_unsorted(self, sample_data):
+        """Unsorted knots raises ValidationError."""
+        with pytest.raises(rs.ValidationError, match="sorted"):
+            rs.glm_dict(
+                response="y",
+                terms={"x1": {"type": "bs", "knots": [5.0, 2.0, 8.0]}},
+                data=sample_data,
+            )
+
+    def test_explicit_knots_duplicated(self, sample_data):
+        """Duplicate knots raises ValidationError."""
+        with pytest.raises(rs.ValidationError, match="unique"):
+            rs.glm_dict(
+                response="y",
+                terms={"x1": {"type": "ns", "knots": [3.0, 3.0, 6.0]}},
+                data=sample_data,
+            )
+
+    def test_explicit_knots_prediction_consistency(self, sample_data):
+        """Predictions on new data reuse the same knots."""
+        knots = [2.0, 5.0, 8.0]
+        result = rs.glm_dict(
+            response="y",
+            terms={"x1": {"type": "bs", "knots": knots}},
+            data=sample_data,
+            family="poisson",
+        ).fit()
+
+        # Predict on new data within the same range
+        new_data = pl.DataFrame({"x1": np.linspace(0, 10, 50)})
+        preds = result.predict(new_data)
+        assert len(preds) == 50
+        assert np.all(np.isfinite(preds))
+
+    def test_explicit_knots_serialization(self, sample_data):
+        """to_bytes/from_bytes roundtrip preserves explicit knots model."""
+        knots = [2.0, 5.0, 8.0]
+        result = rs.glm_dict(
+            response="y",
+            terms={"x1": {"type": "bs", "knots": knots}},
+            data=sample_data,
+            family="poisson",
+        ).fit()
+
+        # Roundtrip
+        loaded = rs.GLMModel.from_bytes(result.to_bytes())
+
+        # Predictions should match
+        new_data = pl.DataFrame({"x1": np.linspace(0, 10, 50)})
+        np.testing.assert_allclose(
+            result.predict(new_data),
+            loaded.predict(new_data),
+        )
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
