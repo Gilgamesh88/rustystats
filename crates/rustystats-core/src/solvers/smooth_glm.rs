@@ -24,7 +24,7 @@
 
 use ndarray::{s, Array1, Array2, ArrayView2};
 
-use crate::constants::MAX_IRLS_WEIGHT;
+use crate::constants::{MAX_IRLS_WEIGHT, SMOOTH_CONVERGENCE_TOL, ZERO_TOL};
 use crate::convert;
 use crate::error::{Result, RustyStatsError};
 use crate::families::Family;
@@ -223,7 +223,7 @@ fn beta_to_alpha(beta: &[f64], monotonicity: &Monotonicity) -> Array1<f64> {
     for j in 1..k {
         let diff = sign * (beta[j] - beta[j - 1]);
         // Clamp to a small positive value to avoid ln(0) or ln(negative)
-        alpha[j] = diff.max(1e-10).ln();
+        alpha[j] = diff.max(ZERO_TOL).ln();
     }
     alpha
 }
@@ -620,13 +620,34 @@ pub fn fit_smooth_glm_full_matrix(
     let mut converged = false;
     let mut iteration = 0;
     let mut coefficients = Array1::zeros(total_cols);
-    let mut cov_unscaled = Array2::zeros((total_cols, total_cols));
     let mut final_weights = Array1::ones(n);
 
     let log_lambda_min = config.lambda_min.ln();
     let log_lambda_max = config.lambda_max.ln();
     let mut penalty_matrix = Array2::zeros((total_cols, total_cols));
     let mut lambdas_stable_count = 0u32;
+
+    // Track previous lambdas to skip rebuilding penalty_matrix when unchanged.
+    // Only used in the non-monotonic path (monotonic always rebuilds due to J changes).
+    let mut prev_lambdas: Vec<f64> = vec![f64::NAN; smooth_specs.len()];
+    let mut penalty_dirty = true;
+
+    // Pre-allocate per-iteration buffers to avoid heap allocations inside the IRLS loop
+    let mut irls_weights = Array1::zeros(n);
+    let mut combined_weights = Array1::zeros(n);
+    let mut working_response = Array1::zeros(n);
+
+    // Use a looser tolerance for smooth models — GCV lambda perturbation
+    // introduces noise larger than 1e-8, so tighter tolerance just wastes iterations
+    let smooth_tolerance = config.irls_config.tolerance.max(SMOOTH_CONVERGENCE_TOL);
+
+    // Pre-allocate adjusted_response for the monotonic path — avoids cloning
+    // working_response each iteration (saves one n-sized allocation per iteration)
+    let mut adjusted_response = if has_monotonic {
+        Array1::zeros(n)
+    } else {
+        Array1::zeros(0) // Not used in non-monotonic path
+    };
 
     // Pre-allocate x_tilde for the monotonic path — cloned once from x_combined,
     // then only the monotonic smooth columns are overwritten each iteration.
@@ -664,24 +685,18 @@ pub fn fit_smooth_glm_full_matrix(
         iteration += 1;
         let deviance_old = deviance;
 
-        // IRLS weights
+        // IRLS weights, combined weights, and working response — computed in a
+        // single fused loop using pre-allocated buffers (no per-iteration heap allocs)
         let link_deriv = link.derivative(&mu);
         let variance = family.variance(&mu);
 
-        let irls_weights: Array1<f64> = (0..n)
-            .map(|i| {
-                let d = link_deriv[i];
-                let v = variance[i];
-                (1.0 / (v * d * d))
-                    .max(config.irls_config.min_weight)
-                    .min(MAX_IRLS_WEIGHT)
-            })
-            .collect();
-
-        let combined_weights = &prior_weights * &irls_weights;
-
-        // Working response: (eta - offset) + (y - mu) * link_deriv
-        let working_response = (&eta - &offset_vec) + &((y - &mu) * &link_deriv);
+        for i in 0..n {
+            irls_weights[i] = (1.0 / (variance[i] * link_deriv[i] * link_deriv[i]))
+                .max(config.irls_config.min_weight)
+                .min(MAX_IRLS_WEIGHT);
+            combined_weights[i] = prior_weights[i] * irls_weights[i];
+            working_response[i] = (eta[i] - offset_vec[i]) + (y[i] - mu[i]) * link_deriv[i];
+        }
 
         let mut new_coef;
 
@@ -730,6 +745,7 @@ pub fn fit_smooth_glm_full_matrix(
                     p_param,
                 );
                 lambdas = optimizer.optimize_lambdas(
+                    &lambdas,
                     log_lambda_min,
                     log_lambda_max,
                     config.lambda_tol,
@@ -772,12 +788,13 @@ pub fn fit_smooth_glm_full_matrix(
                         &init_z,
                         &init_cw,
                         &init_penalty,
+                        true, // skip covariance — only coefficients needed for initialization
                     )?;
                     init_coef = new_init_coef;
                     init_eta = &x_combined.dot(&init_coef) + &offset_vec;
                     init_mu = family.clamp_mu(&link.inverse(&init_eta));
                     let new_dev = family.deviance(y, &init_mu, Some(&prior_weights));
-                    let init_rel = if init_dev.abs() > 1e-10 {
+                    let init_rel = if init_dev.abs() > ZERO_TOL {
                         (init_dev - new_dev).abs() / init_dev.abs()
                     } else {
                         (init_dev - new_dev).abs()
@@ -817,7 +834,7 @@ pub fn fit_smooth_glm_full_matrix(
                 deviance = family.deviance(y, &mu, Some(&prior_weights));
 
                 alpha_initialized = true;
-                final_weights = combined_weights;
+                final_weights = combined_weights.clone();
 
                 // Skip the rest of this iteration — we've just initialized
                 continue;
@@ -847,7 +864,7 @@ pub fn fit_smooth_glm_full_matrix(
             //   z_adj = z - c, then alpha_new = (X_tilde'WX_tilde)^-1 X_tilde'W z_adj
             // Compute linearization offset c = X_smooth * (beta - J*alpha)
             // and adjust working response: z_adj = z - c
-            let mut adjusted_response = working_response.clone();
+            adjusted_response.assign(&working_response);
             for (i, spec) in smooth_specs.iter().enumerate() {
                 if let Some(ref alpha) = alpha_params[i] {
                     let alpha_slice = alpha.as_slice().expect("contiguous array");
@@ -882,7 +899,7 @@ pub fn fit_smooth_glm_full_matrix(
                 .sum();
 
             // GCV optimization on transformed problem
-            let run_gcv = lambdas_stable_count < 2 && (iteration <= 3 || iteration % 2 == 0);
+            let run_gcv = lambdas_stable_count < 1 && (iteration <= 3 || iteration % 2 == 0);
             if run_gcv {
                 let old_lambdas = lambdas.clone();
 
@@ -914,6 +931,7 @@ pub fn fit_smooth_glm_full_matrix(
                 );
 
                 lambdas = optimizer.optimize_lambdas(
+                    &lambdas,
                     log_lambda_min,
                     log_lambda_max,
                     config.lambda_tol,
@@ -961,7 +979,7 @@ pub fn fit_smooth_glm_full_matrix(
 
             // Solve penalized WLS in alpha-space (X_tilde, S_tilde)
             let (alpha_coef, _) =
-                solve_wls_from_precomputed(&cached_xtwx_t, &cached_xtwz_t, &penalty_matrix)?;
+                solve_wls_from_precomputed(&cached_xtwx_t, &cached_xtwz_t, &penalty_matrix, true)?;
 
             new_coef = coefficients.clone();
 
@@ -1133,7 +1151,7 @@ pub fn fit_smooth_glm_full_matrix(
 
             // Optimize lambdas using cached matrices (no X'WX recomputation)
             // Skip GCV once lambdas have stabilized for 2 consecutive iterations
-            let run_gcv = lambdas_stable_count < 2 && (iteration <= 3 || iteration % 2 == 0);
+            let run_gcv = lambdas_stable_count < 1 && (iteration <= 3 || iteration % 2 == 0);
             if run_gcv {
                 let old_lambdas = lambdas.clone();
 
@@ -1151,6 +1169,7 @@ pub fn fit_smooth_glm_full_matrix(
                 );
 
                 lambdas = optimizer.optimize_lambdas(
+                    &lambdas,
                     log_lambda_min,
                     log_lambda_max,
                     config.lambda_tol,
@@ -1175,24 +1194,32 @@ pub fn fit_smooth_glm_full_matrix(
                 } else {
                     lambdas_stable_count = 0;
                 }
+
+                // Mark penalty as dirty if any lambda changed
+                penalty_dirty = lambdas != prev_lambdas;
             }
 
-            // Build penalty matrix (reuse allocation, zero and refill)
-            penalty_matrix.fill(0.0);
-            for (i, spec) in smooth_specs.iter().enumerate() {
-                embed_penalty(
-                    &mut penalty_matrix,
-                    &spec.penalty,
-                    spec.col_start,
-                    lambdas[i],
-                );
+            // Build penalty matrix only when lambdas have changed
+            if penalty_dirty {
+                penalty_matrix.fill(0.0);
+                for (i, spec) in smooth_specs.iter().enumerate() {
+                    embed_penalty(
+                        &mut penalty_matrix,
+                        &spec.penalty,
+                        spec.col_start,
+                        lambdas[i],
+                    );
+                }
+                prev_lambdas.clone_from_slice(&lambdas);
+                penalty_dirty = false;
             }
 
-            // Solve WLS from pre-computed X'WX — no redundant O(n*p^2) computation
-            let (coef, xtwinv) =
-                solve_wls_from_precomputed(&cached_xtwx, &cached_xtwz, &penalty_matrix)?;
+            // Solve WLS from pre-computed X'WX — skip covariance on intermediate
+            // iterations (O(p³) savings per iteration). The covariance is computed
+            // once at the end by assemble_smooth_result_from_specs.
+            let (coef, _) =
+                solve_wls_from_precomputed(&cached_xtwx, &cached_xtwz, &penalty_matrix, true)?;
             new_coef = coef;
-            cov_unscaled = xtwinv;
         }
 
         // Apply sign constraints on parametric (non-smooth) columns
@@ -1311,15 +1338,15 @@ pub fn fit_smooth_glm_full_matrix(
         eta = &x_combined.dot(&coefficients) + &offset_vec;
         mu = family.clamp_mu(&link.inverse(&eta));
         deviance = family.deviance(y, &mu, Some(&prior_weights));
-        final_weights = combined_weights;
+        final_weights = combined_weights.clone();
 
-        let rel_change = if deviance_old.abs() > 1e-10 {
+        let rel_change = if deviance_old.abs() > ZERO_TOL {
             (deviance_old - deviance).abs() / deviance_old.abs()
         } else {
             (deviance_old - deviance).abs()
         };
 
-        if rel_change < config.irls_config.tolerance {
+        if rel_change < smooth_tolerance {
             converged = true;
             break;
         }
@@ -1347,11 +1374,9 @@ pub fn fit_smooth_glm_full_matrix(
         prior_weights,
         y,
         offset,
-        if has_monotonic {
-            None
-        } else {
-            Some(cov_unscaled)
-        },
+        // Covariance is computed once here by assemble_smooth_result_from_specs,
+        // rather than redundantly on every intermediate IRLS iteration.
+        None,
     ))
 }
 
