@@ -109,8 +109,8 @@ result = rs.glm_dict(
 |------|------------|-------------|
 | `linear` | `monotonicity` (optional) | Raw continuous variable |
 | `categorical` | `levels` (optional) | Dummy encoding |
-| `bs` | `df` or `k`, `degree=3`, `monotonicity` | B-spline (default: penalized smooth, k=10) |
-| `ns` | `df` or `k` | Natural spline (default: penalized smooth, k=10) |
+| `bs` | `df` or `k`, `knots`, `boundary_knots`, `degree=3`, `monotonicity` | B-spline (default: penalized smooth, k=10) |
+| `ns` | `df` or `k`, `knots`, `boundary_knots` | Natural spline (default: penalized smooth, k=10) |
 | `target_encoding` | `prior_weight=1` | Regularized target encoding |
 | `expression` | `expr`, `monotonicity` (optional) | Arbitrary expression (like `I()`) |
 
@@ -186,6 +186,8 @@ result = rs.glm_dict(
 - No parameters → penalized smooth with automatic tuning (k=10)
 - `df=5` → fixed 5 degrees of freedom
 - `k=15` → penalized smooth with 15 basis functions
+- `knots=[2.0, 5.0, 8.0]` → explicit interior knot positions (mutually exclusive with `df`/`k`)
+- `boundary_knots=(0.0, 10.0)` → custom boundary knots (optional, defaults to data range)
 - `monotonicity="increasing"` or `"decreasing"` → constrained effect (bs only)
 
 **When to use each type:**

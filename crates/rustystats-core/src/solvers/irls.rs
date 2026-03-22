@@ -489,6 +489,8 @@ fn fit_glm_core(
     let mut best_coefficients = iter_coefficients.clone();
     let mut best_mu = mu.clone();
     let mut best_eta = eta.clone();
+    let mut best_cov = cov_unscaled.clone();
+    let mut best_weights = final_weights.clone();
 
     while iteration < config.max_iterations {
         iteration += 1;
@@ -664,6 +666,8 @@ fn fit_glm_core(
             best_coefficients = iter_coefficients.clone();
             best_mu = mu.clone();
             best_eta = eta.clone();
+            best_cov = cov_unscaled.clone();
+            best_weights = final_weights.clone();
         }
 
         if rel_change < config.tolerance {
@@ -685,7 +689,12 @@ fn fit_glm_core(
     // (deviance can increase due to projection, so last iteration may not be best)
     let (final_mu, final_eta, final_deviance, use_coefficients) =
         if has_constraints && best_deviance < deviance {
-            // Best solution was found earlier - use it
+            // Best solution was found earlier — use it and treat as converged
+            // (sign clamping can cause coefficient oscillation even when deviance
+            // has stabilized, so the best-tracked solution is the correct answer)
+            converged = true;
+            cov_unscaled = best_cov;
+            final_weights = best_weights;
             (best_mu, best_eta, best_deviance, best_coefficients)
         } else {
             (mu, eta, deviance, iter_coefficients)
@@ -1071,9 +1080,8 @@ pub fn solve_weighted_least_squares_with_penalty_matrix(
 
     // Add full penalty matrix S to X'WX
     for i in 0..p {
-        for j in i..p {
+        for j in 0..p {
             xtx[(i, j)] += penalty_matrix[[i, j]];
-            xtx[(j, i)] += penalty_matrix[[j, i]];
         }
     }
 
@@ -1103,9 +1111,8 @@ pub fn solve_wls_from_precomputed(
 
     // Add full penalty matrix S to X'WX
     for i in 0..p {
-        for j in i..p {
+        for j in 0..p {
             xtx_pen[(i, j)] += penalty_matrix[[i, j]];
-            xtx_pen[(j, i)] += penalty_matrix[[j, i]];
         }
     }
 

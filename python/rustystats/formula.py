@@ -46,7 +46,6 @@ from rustystats.constants import (
 )
 from rustystats.exceptions import (
     PredictionError,
-    SerializationError,
     ValidationError,
 )
 
@@ -242,6 +241,11 @@ def _get_constraint_indices(feature_names: list[str]) -> tuple:
     """
     Compute coefficient constraint indices from feature names.
 
+    For smooth (penalized) monotonic bs() terms, the solver handles monotonicity
+    internally via exp reparameterization on B-spline coefficients (Pya & Wood, 2015).
+    The bs() sign constraints here serve as a fallback for fixed-df monotonic terms
+    that go through the IRLS path (which doesn't yet have exp reparameterization).
+
     Returns
     -------
     nonneg_indices : list[int]
@@ -249,21 +253,25 @@ def _get_constraint_indices(feature_names: list[str]) -> tuple:
     nonpos_indices : list[int]
         Indices of coefficients that must be non-positive (β ≤ 0)
     """
-    # ms()/ns() with + and pos() terms require non-negative coefficients
+    # ms()/ns()/bs() with + and pos() terms require non-negative coefficients.
+    # Smooth (penalized) terms with ", k," in the name use exp reparameterization
+    # for monotonicity and must NOT have sign clamping (which would corrupt beta[0]).
     nonneg_indices = [
         i
         for i, name in enumerate(feature_names)
         if name.startswith("pos(")
-        or (name.startswith("ms(") and ", +)" in name)
+        or (name.startswith("ms(") and ", +)" in name and ", k," not in name)
         or (name.startswith("ns(") and ", +)" in name)
+        or (name.startswith("bs(") and ", +)" in name and ", k," not in name)
     ]
-    # ms()/ns() with - and neg() terms require non-positive coefficients
+    # ms()/ns()/bs() with - and neg() terms require non-positive coefficients.
     nonpos_indices = [
         i
         for i, name in enumerate(feature_names)
         if name.startswith("neg(")
-        or (name.startswith("ms(") and ", -)" in name)
+        or (name.startswith("ms(") and ", -)" in name and ", k," not in name)
         or (name.startswith("ns(") and ", -)" in name)
+        or (name.startswith("bs(") and ", -)" in name and ", k," not in name)
     ]
     return nonneg_indices, nonpos_indices
 
@@ -373,6 +381,8 @@ def _fit_with_smooth_penalties(
     lambda_min: float = DEFAULT_LAMBDA_MIN,
     lambda_max: float = DEFAULT_LAMBDA_MAX,
     store_design_matrix: bool = False,
+    nonneg_indices: list[int] | None = None,
+    nonpos_indices: list[int] | None = None,
 ) -> tuple:
     """
     Fit GLM with penalized smooth terms using fast GCV optimization.
@@ -436,6 +446,8 @@ def _fit_with_smooth_penalties(
         lambda_max,
         monotonicity_specs if has_monotonic else None,
         store_design_matrix,
+        nonneg_indices if nonneg_indices else None,
+        nonpos_indices if nonpos_indices else None,
     )
 
     # Build smooth term results — coefficients are already in original column order
@@ -506,6 +518,9 @@ def _fit_glm_core(
     # Check for smooth terms (s() terms with automatic lambda selection)
     smooth_terms, smooth_col_indices = builder.get_smooth_terms()
 
+    # Compute sign constraints from feature names (pos()/neg() and monotonic splines)
+    nonneg_indices, nonpos_indices = _get_constraint_indices(feature_names)
+
     if smooth_terms and alpha == 0.0:
         # Use penalized fitting with GCV-based lambda selection
         result, smooth_results, total_edf, gcv = _fit_with_smooth_penalties(
@@ -522,11 +537,10 @@ def _fit_glm_core(
             max_iter,
             tol,
             store_design_matrix=store_design_matrix,
+            nonneg_indices=nonneg_indices if nonneg_indices else None,
+            nonpos_indices=nonpos_indices if nonpos_indices else None,
         )
         return result, smooth_results, total_edf, gcv
-
-    # Standard fitting (no smooth terms or regularization already applied)
-    nonneg_indices, nonpos_indices = _get_constraint_indices(feature_names)
 
     result = _fit_glm_rust(
         y,
@@ -858,7 +872,7 @@ class _DeserializedBuilder(InteractionBuilder):
         self._cat_encoding_cache = state["cat_encoding_cache"]
         self._fitted_splines = state["fitted_splines"]
         self._te_stats = state["te_stats"]
-        self._fe_stats: dict[str, dict] = {}
+        self._fe_stats: dict[str, dict] = state.get("fe_stats", {})
         self.dtype = state["dtype"]
         self.data = None
         self._n = 0
@@ -1700,11 +1714,26 @@ class GLMModel:
                 "cat_encoding_cache": self._builder._cat_encoding_cache,
                 "fitted_splines": self._builder._fitted_splines,
                 "te_stats": getattr(self._builder, "_te_stats", {}),
+                "fe_stats": getattr(self._builder, "_fe_stats", {}),
                 "dtype": self._builder.dtype,
             }
 
+        # Record basis implementation for each spline term
+        spline_basis_impl = {}
+        if self._builder is not None and hasattr(self._builder, "_fitted_splines"):
+            for var_name, spline_term in self._builder._fitted_splines.items():
+                if hasattr(spline_term, "spline_type"):
+                    uses_ispline = spline_term.spline_type == "ms" or (
+                        spline_term.spline_type == "bs"
+                        and getattr(spline_term, "monotonicity", None) is not None
+                    )
+                    spline_basis_impl[var_name] = {
+                        "spline_type": spline_term.spline_type,
+                        "basis": "ispline" if uses_ispline else spline_term.spline_type,
+                        "monotonicity": getattr(spline_term, "monotonicity", None),
+                    }
+
         state = {
-            "version": 1,
             "result_state": result_state,
             "feature_names": self.feature_names,
             "formula": self.formula,
@@ -1719,6 +1748,7 @@ class GLMModel:
             "terms_dict": self._terms_dict,
             "interactions_spec": self._interactions_spec,
             "complement_spec": self._complement_spec,
+            "basis_impl": spline_basis_impl,
         }
 
         return pickle.dumps(state, protocol=pickle.HIGHEST_PROTOCOL)
@@ -1750,12 +1780,6 @@ class GLMModel:
         import pickle
 
         state = pickle.loads(data)
-
-        if state.get("version", 0) != 1:
-            raise SerializationError(
-                f"Unsupported serialization version: {state.get('version')}. "
-                "Model was saved with a different version of rustystats."
-            )
 
         result_state = state["result_state"]
 
@@ -1874,6 +1898,7 @@ def _parse_term_spec(
         "categorical": {"type", "levels"},
         "bs": {"type", "df", "k", "degree", "monotonicity", "knots", "boundary_knots"},
         "ns": {"type", "df", "k", "knots", "boundary_knots"},
+        "ms": {"type", "df", "k", "degree", "monotonicity", "knots", "boundary_knots"},
         "target_encoding": {"type", "prior_weight", "n_permutations", "variable"},
         "frequency_encoding": {"type", "variable"},
         "expression": {"type", "expr", "monotonicity"},
@@ -2023,6 +2048,55 @@ def _parse_term_spec(
             )
             if is_penalized:
                 term._is_smooth = True
+            spline_terms.append(term)
+
+    elif term_type == "ms":
+        # Monotonic spline — uses I-spline basis via SplineTerm with spline_type="ms"
+        # Default monotonicity to "increasing" if not specified
+        mono = monotonicity or "increasing"
+        explicit_knots = spec.get("knots")
+        user_boundary_knots = spec.get("boundary_knots")
+        if explicit_knots is not None:
+            knots_list = _validate_explicit_knots(var_name, explicit_knots, spec)
+            degree = spec.get("degree", DEFAULT_SPLINE_DEGREE)
+            implied_df = len(knots_list) + degree
+            bk_tuple = tuple(user_boundary_knots) if user_boundary_knots is not None else None
+            term = SplineTerm(
+                var_name=var_name,
+                spline_type="ms",
+                df=implied_df,
+                degree=degree,
+                boundary_knots=bk_tuple,
+                monotonicity=mono,
+            )
+            term._computed_internal_knots = knots_list
+            term._is_smooth = False
+            term._monotonic = True
+            spline_terms.append(term)
+        else:
+            k = spec.get("k")
+            df = spec.get("df")
+            if df is None and k is None:
+                df = DEFAULT_SPLINE_DF
+                is_penalized = True
+            elif k is not None:
+                df = k
+                is_penalized = True
+            else:
+                is_penalized = False
+            degree = spec.get("degree", DEFAULT_SPLINE_DEGREE)
+            bk_tuple = tuple(user_boundary_knots) if user_boundary_knots is not None else None
+            term = SplineTerm(
+                var_name=var_name,
+                spline_type="ms",
+                df=df,
+                degree=degree,
+                boundary_knots=bk_tuple,
+                monotonicity=mono,
+            )
+            if is_penalized:
+                term._is_smooth = True
+            term._monotonic = True
             spline_terms.append(term)
 
     elif term_type == "target_encoding":
@@ -2178,15 +2252,15 @@ def _parse_interaction_spec(
         elif term_type == "categorical":
             cat_factors.add(var_name)
             categorical_vars.add(var_name)
-        elif term_type in ("bs", "ns", "s"):
+        elif term_type in ("bs", "ns", "ms", "s"):
             explicit_knots = spec.get("knots")
             user_boundary_knots = spec.get("boundary_knots")
-            # For s() smooth terms, use k parameter; for bs/ns use df
+            # For s() smooth terms, use k parameter; for bs/ns/ms use df
             if explicit_knots is not None:
                 knots_list = _validate_explicit_knots(var_name, explicit_knots, spec)
                 degree = spec.get("degree", DEFAULT_SPLINE_DEGREE)
                 spline_type_out = "bs" if term_type == "s" else term_type
-                if spline_type_out == "bs":
+                if spline_type_out in ("bs", "ms"):
                     implied_df = len(knots_list) + degree
                 else:
                     implied_df = len(knots_list)
@@ -2206,9 +2280,12 @@ def _parse_interaction_spec(
                 if term_type == "s":
                     df = spec.get("k", DEFAULT_SPLINE_DF)
                 else:
-                    df = spec.get("df", 5 if term_type == "bs" else 4)
+                    df = spec.get("df", 5 if term_type in ("bs", "ms") else 4)
                 degree = spec.get("degree", DEFAULT_SPLINE_DEGREE)
                 monotonicity = spec.get("monotonicity")
+                # For ms type, default monotonicity to "increasing"
+                if term_type == "ms" and monotonicity is None:
+                    monotonicity = "increasing"
                 # Use unified bs with monotonicity parameter
                 spline_type_out = "bs" if term_type == "s" else term_type
                 bk_tuple = tuple(user_boundary_knots) if user_boundary_knots is not None else None
@@ -2446,6 +2523,14 @@ class FormulaGLMDict(_GLMBase):
                 else:
                     df = spec.get("df", DEFAULT_SPLINE_DF)
                     term_strs.append(f"ns({var_name}, df={df})")
+            elif term_type == "ms":
+                mono = spec.get("monotonicity", "increasing")
+                knots = spec.get("knots")
+                if knots is not None:
+                    term_strs.append(f"ms({var_name}, knots=[{len(knots)}], {mono})")
+                else:
+                    df = spec.get("df", DEFAULT_SPLINE_DF)
+                    term_strs.append(f"ms({var_name}, df={df}, {mono})")
             elif term_type == "target_encoding":
                 interaction = spec.get("interaction")
                 if interaction:
