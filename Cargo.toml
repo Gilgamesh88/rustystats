@@ -38,6 +38,10 @@ ndarray = { version = "0.17", features = ["approx"] }
 # The matrixmultiply feature enables optimized cache-blocked matrix multiplication
 nalgebra = { version = "0.34", features = ["matrixmultiply"] }
 
+# --- SMuRF: Sparse Linear Algebra ---
+faer     = "0.24.0"
+faer-ext = "0.7.1"
+
 # --- Python Integration ---
 pyo3 = { version = "0.28", features = ["extension-module", "generate-import-lib"] }  # Rust <-> Python bridge
 numpy = "0.28"                             # NumPy array support for PyO3

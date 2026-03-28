@@ -57,8 +57,15 @@ pub use inference::{
     robust_standard_errors, score_test_categorical, score_test_continuous, HCType, ScoreTestResult,
 };
 pub use links::Link;
-pub use regularization::{soft_threshold, Penalty, RegularizationConfig};
-pub use solvers::{fit_glm_unified, FitConfig, IRLSConfig, IRLSResult};
+pub use regularization::{
+    soft_threshold, Penalty, RegularizationConfig,
+    SmurfPenalty, SmurfPenaltyType, SmurfTermSpec,
+    LambdaSelection, PenWeightsStrategy,
+};
+pub use solvers::{
+    fit_glm_unified, FitConfig, IRLSConfig, IRLSResult,
+    fit_smurf_glm, SmurfConfig, SmurfResult,
+};
 pub use splines::{
     bs, bs_basis, bs_names, bs_with_knots, compute_knots, ns, ns_basis, ns_names, DEFAULT_DEGREE,
 };

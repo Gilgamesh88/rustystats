@@ -39,6 +39,16 @@
 // =============================================================================
 
 use ndarray::Array2;
+
+// SMuRF submodules
+pub mod smurf_types;
+pub mod smurf_matrices;
+pub mod smurf_proximal;
+pub mod smurf_weights;
+
+pub use smurf_types::{
+    LambdaSelection, PenWeightsStrategy, SmurfPenalty, SmurfPenaltyType, SmurfTermSpec,
+};
 use std::ops::Range;
 
 /// Penalty type for regularized GLMs.
@@ -90,6 +100,11 @@ pub enum Penalty {
     ///
     /// Can be combined with scalar Ridge/Lasso for parametric terms.
     Smooth(SmoothPenalty),
+
+    /// SMuRF: Sparse Multi-type Regularized Feature modeling.
+    /// Gradiente proximal FISTA con penalización mixta por predictor.
+    /// Referencia: Devriendt et al. (2021), Insurance: Mathematics and Economics.
+    SMuRF(SmurfPenalty),
 }
 
 /// Penalty configuration for smooth terms in GAMs.
@@ -207,6 +222,7 @@ impl PartialEq for Penalty {
                 },
             ) => l1 == l2 && r1 == r2,
             (Penalty::Smooth(a), Penalty::Smooth(b)) => a == b,
+            (Penalty::SMuRF(a), Penalty::SMuRF(b)) => a.lambda == b.lambda,
             _ => false,
         }
     }
@@ -242,6 +258,7 @@ impl Penalty {
         match self {
             Penalty::Lasso(_) => true,
             Penalty::ElasticNet { l1_ratio, .. } => *l1_ratio > 0.0,
+            Penalty::SMuRF(_) => false,
             _ => false,
         }
     }
@@ -253,6 +270,7 @@ impl Penalty {
             Penalty::Smooth(_) => true, // Smooth penalty uses IRLS with penalty matrix
             Penalty::ElasticNet { l1_ratio, .. } => *l1_ratio == 0.0,
             Penalty::Lasso(_) => false,
+            Penalty::SMuRF(_) => false,
         }
     }
 
@@ -282,6 +300,24 @@ impl Penalty {
         Penalty::Smooth(smooth_penalty)
     }
 
+    /// Create a SMuRF penalty.
+    pub fn smurf(penalty: SmurfPenalty) -> Self {
+        Penalty::SMuRF(penalty)
+    }
+
+    /// Returns true if this is a SMuRF penalty.
+    pub fn is_smurf(&self) -> bool {
+        matches!(self, Penalty::SMuRF(_))
+    }
+
+    /// Get the SMuRF penalty configuration, if this is a SMuRF penalty.
+    pub fn as_smurf(&self) -> Option<&SmurfPenalty> {
+        match self {
+            Penalty::SMuRF(s) => Some(s),
+            _ => None,
+        }
+    }
+
     /// Get the L2 (Ridge) component of the penalty.
     ///
     /// Returns 0.0 for no penalty or pure Lasso.
@@ -293,6 +329,7 @@ impl Penalty {
             Penalty::Lasso(_) => 0.0,
             Penalty::ElasticNet { lambda, l1_ratio } => *lambda * (1.0 - l1_ratio),
             Penalty::Smooth(sp) => sp.parametric_l2.unwrap_or(0.0),
+            Penalty::SMuRF(_) => 0.0,
         }
     }
 
@@ -305,7 +342,8 @@ impl Penalty {
             Penalty::Ridge(_) => 0.0,
             Penalty::Lasso(lambda) => *lambda,
             Penalty::ElasticNet { lambda, l1_ratio } => *lambda * l1_ratio,
-            Penalty::Smooth(_) => 0.0, // Smooth penalties don't have L1 component
+            Penalty::Smooth(_) => 0.0,
+            Penalty::SMuRF(_) => 0.0,
         }
     }
 
@@ -316,7 +354,8 @@ impl Penalty {
             Penalty::None => 0.0,
             Penalty::Ridge(lambda) | Penalty::Lasso(lambda) => *lambda,
             Penalty::ElasticNet { lambda, .. } => *lambda,
-            Penalty::Smooth(_) => 0.0, // Per-term lambdas accessed via as_smooth()
+            Penalty::Smooth(_) => 0.0,
+            Penalty::SMuRF(s) => s.lambda,
         }
     }
 }
@@ -393,6 +432,14 @@ impl RegularizationConfig {
     pub fn elastic_net(lambda: f64, l1_ratio: f64) -> Self {
         Self {
             penalty: Penalty::elastic_net(lambda, l1_ratio),
+            ..Default::default()
+        }
+    }
+
+    /// Create a SMuRF regularization config.
+    pub fn smurf(penalty: SmurfPenalty) -> Self {
+        Self {
+            penalty: Penalty::SMuRF(penalty),
             ..Default::default()
         }
     }

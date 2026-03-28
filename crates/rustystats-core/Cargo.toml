@@ -37,6 +37,8 @@ statrs = { workspace = true }
 
 # Parallel computation - for multi-threaded IRLS
 rayon = { workspace = true }
+faer     = { workspace = true }
+faer-ext = { workspace = true }
 
 [lints]
 workspace = true

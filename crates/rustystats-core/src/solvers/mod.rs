@@ -35,6 +35,7 @@ pub mod gcv_optimizer;
 mod irls;
 pub mod nnls;
 pub mod smooth_glm;
+pub mod smurf;
 
 pub use gcv_optimizer::{brent_minimize, MultiTermGCVOptimizer};
 pub use irls::{
@@ -42,6 +43,7 @@ pub use irls::{
     solve_wls_from_precomputed,
 };
 pub use irls::{fit_glm_unified, FitConfig, IRLSConfig, IRLSResult};
+pub use smurf::{fit_smurf_glm, SmurfConfig, SmurfResult};
 pub use nnls::{
     nnls, nnls_penalized, nnls_weighted, nnls_weighted_penalized, NNLSConfig, NNLSResult,
 };
