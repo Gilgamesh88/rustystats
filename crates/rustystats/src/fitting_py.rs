@@ -717,3 +717,157 @@ pub fn fit_smooth_glm_unified_py<'py>(
 
     smooth_result_to_py(py, result, store_design_matrix)
 }
+
+// =============================================================================
+// fit_smurf_glm_py — SMuRF proximal gradient GLM
+// =============================================================================
+
+#[pyfunction]
+#[pyo3(signature = (
+    y, x, family, penalty_types, n_params_per_term, term_names,
+    link=None, var_power=1.5, offset=None, weights=None,
+    ref_cats=None, adj_matrices=None,
+    lambda_val=1.0, lambda_selection="cv1se.dev",
+    lambda1_per_term=None, lambda2_per_term=None,
+    pen_weights_strategy="eq", cv_folds=5,
+    epsilon=1e-5, max_iter=10000, step_init=1.0, tau=0.5,
+    reestimate=true, parallel_proximal=false,
+))]
+pub fn fit_smurf_glm_py(
+    py: Python<'_>,
+    y: PyReadonlyArray1<f64>,
+    x: PyReadonlyArray2<f64>,
+    family: &str,
+    penalty_types: Vec<String>,
+    n_params_per_term: Vec<usize>,
+    term_names: Vec<String>,
+    link: Option<&str>,
+    var_power: f64,
+    offset: Option<PyReadonlyArray1<f64>>,
+    weights: Option<PyReadonlyArray1<f64>>,
+    ref_cats: Option<Vec<Option<usize>>>,
+    adj_matrices: Option<Vec<Option<PyReadonlyArray2<f64>>>>,
+    lambda_val: f64,
+    lambda_selection: &str,
+    lambda1_per_term: Option<Vec<f64>>,
+    lambda2_per_term: Option<Vec<f64>>,
+    pen_weights_strategy: &str,
+    cv_folds: usize,
+    epsilon: f64,
+    max_iter: usize,
+    step_init: f64,
+    tau: f64,
+    reestimate: bool,
+    parallel_proximal: bool,
+) -> PyResult<Py<PyAny>> {
+    use rustystats_core::regularization::smurf_types::{
+        LambdaSelection, PenWeightsStrategy, SmurfPenalty, SmurfPenaltyType, SmurfTermSpec,
+    };
+    use rustystats_core::solvers::smurf::{fit_smurf_glm, SmurfConfig};
+
+    let y_arr = y.as_array().to_owned();
+    let x_arr = x.as_array().to_owned();
+    let offset_arr: Option<ndarray::Array1<f64>> = offset.map(|o| o.as_array().to_owned());
+    let weights_arr: Option<ndarray::Array1<f64>> = weights.map(|w| w.as_array().to_owned());
+
+    let n_terms = term_names.len();
+    let adj_mats: Vec<Option<ndarray::Array2<f64>>> = match adj_matrices {
+        Some(mats) => mats.into_iter().map(|m| m.map(|a| a.as_array().to_owned())).collect(),
+        None => vec![None; n_terms],
+    };
+    let ref_cat_vec: Vec<Option<usize>> = ref_cats.unwrap_or_else(|| vec![None; n_terms]);
+    let l1_vec: Vec<f64> = lambda1_per_term.unwrap_or_else(|| vec![0.0; n_terms]);
+    let l2_vec: Vec<f64> = lambda2_per_term.unwrap_or_else(|| vec![0.0; n_terms]);
+
+    // Construir términos
+    let terms: Vec<SmurfTermSpec> = term_names.iter().enumerate().map(|(i, name)| {
+        let pen_type = match penalty_types[i].as_str() {
+            "none"       => Ok(SmurfPenaltyType::None),
+            "lasso"      => Ok(SmurfPenaltyType::Lasso),
+            "grouplasso" => Ok(SmurfPenaltyType::GroupLasso { group_id: 0 }),
+            "flasso"     => Ok(SmurfPenaltyType::FusedLasso),
+            "gflasso"    => Ok(SmurfPenaltyType::GenFusedLasso),
+            "ggflasso"   => Ok(SmurfPenaltyType::GraphGuidedFusedLasso),
+            other        => Err(PyValueError::new_err(format!("Penalización desconocida: '{}'", other))),
+        }?;
+        Ok(SmurfTermSpec {
+            name: name.clone(),
+            penalty_type: pen_type,
+            n_params: n_params_per_term[i],
+            ref_cat: ref_cat_vec[i],
+            lambda1: l1_vec[i],
+            lambda2: l2_vec[i],
+            adj_matrix: adj_mats[i].clone(),
+        })
+    }).collect::<PyResult<Vec<_>>>()?;
+
+    let lambda_sel = LambdaSelection::from_str(lambda_selection)
+        .map_err(PyValueError::new_err)?;
+    let pen_strat = PenWeightsStrategy::from_str(pen_weights_strategy)
+        .map_err(PyValueError::new_err)?;
+
+    let mut penalty = SmurfPenalty::new(terms)
+        .with_lambda_selection(lambda_sel)
+        .with_lambda(lambda_val)
+        .with_cv_folds(cv_folds)
+        .with_pen_weights(pen_strat)
+        .with_epsilon(epsilon)
+        .with_max_iter(max_iter)
+        .with_step_init(step_init)
+        .with_tau(tau);
+    if !reestimate { penalty = penalty.without_reestimation(); }
+    if parallel_proximal { penalty = penalty.with_parallel_proximal(); }
+
+    let fam = family_from_name(family, var_power, 1.0)
+        .map_err(|e| PyValueError::new_err(format!("{}", e)))?;
+    let lnk = link_from_name(link.unwrap_or(default_link_name(family)))
+        .map_err(|e| PyValueError::new_err(format!("{}", e)))?;
+
+    let config = SmurfConfig::new(penalty);
+    let x_cl = x_arr.clone();
+    let y_cl = y_arr.clone();
+    let off_cl = offset_arr.clone();
+    let w_cl = weights_arr.clone();
+
+    let smurf_result = fit_smurf_glm(&x_cl, &y_cl, w_cl.as_ref(), off_cl.as_ref(), fam, lnk, config)
+        .map_err(|e| PyValueError::new_err(format!("SMuRF failed: {}", e)))?;
+
+    let irls = smurf_result.irls_result;
+    let n_obs = y_arr.len();
+    let n_params_x = x_arr.ncols();
+
+    let glm_results = PyGLMResults {
+        coefficients: irls.coefficients,
+        fitted_values: irls.fitted_values,
+        linear_predictor: irls.linear_predictor,
+        deviance: irls.deviance,
+        iterations: irls.iterations,
+        converged: irls.converged,
+        covariance_unscaled: irls.covariance_unscaled,
+        n_obs,
+        n_params: n_params_x,
+        y: irls.y,
+        family_name: family.to_string(),
+        prior_weights: irls.prior_weights,
+        penalty: irls.penalty,
+        design_matrix: None,
+        irls_weights: irls.irls_weights,
+        offset: offset_arr,
+    };
+
+    let meta = pyo3::types::PyDict::new(py);
+    meta.set_item("selected_lambda", smurf_result.selected_lambda)?;
+    meta.set_item("penalty_types", smurf_result.penalty_type_names)?;
+    meta.set_item("fista_iterations", smurf_result.fista_iterations)?;
+    meta.set_item("fista_converged", smurf_result.fista_converged)?;
+    meta.set_item("objective_history", smurf_result.objective_history)?;
+
+    let tuple = pyo3::types::PyTuple::new(
+        py,
+        &[
+            Bound::new(py, glm_results)?.into_any(),
+            meta.into_any(),
+        ],
+    )?;
+    Ok(tuple.unbind().into())
+}

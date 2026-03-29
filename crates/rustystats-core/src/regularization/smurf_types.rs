@@ -155,6 +155,8 @@ impl SmurfPenalty {
     pub fn with_epsilon(mut self, epsilon: f64) -> Self { self.epsilon = epsilon; self }
     pub fn with_max_iter(mut self, n: usize) -> Self { self.max_iter = n; self }
     pub fn with_parallel_proximal(mut self) -> Self { self.parallel_proximal = true; self }
+    pub fn with_step_init(mut self, step: f64) -> Self { self.step_init = step; self }
+    pub fn with_tau(mut self, tau: f64) -> Self { self.tau = tau; self }
 
     pub fn total_params(&self) -> usize {
         self.terms.iter().map(|t| t.n_params).sum()

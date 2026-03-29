@@ -741,7 +741,8 @@ impl PyGLMResults {
             Penalty::Ridge(_) => Some(0.0),
             Penalty::Lasso(_) => Some(1.0),
             Penalty::ElasticNet { l1_ratio, .. } => Some(*l1_ratio),
-            Penalty::Smooth(_) => None, // Smooth penalties don't have L1 ratio
+            Penalty::Smooth(_) => None,
+            Penalty::SMuRF(_) => None,
         }
     }
 
@@ -756,6 +757,7 @@ impl PyGLMResults {
             Penalty::Lasso(_) => "lasso",
             Penalty::ElasticNet { .. } => "elasticnet",
             Penalty::Smooth(_) => "smooth",
+            Penalty::SMuRF(_) => "smurf",
         }
     }
 
