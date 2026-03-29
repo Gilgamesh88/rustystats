@@ -71,7 +71,7 @@ pub fn compute_lambda_max(
 
     // Punto de inicio: beta = 0 → eta = offset, mu = linkinv(offset)
     let eta: Array1<f64> = off.clone();
-    let mu = family.linkinv(&eta);
+    let mu = link.inverse(&eta);
 
     // Gradiente de -log-verosimilitud en beta=0:
     // ∇f(β)_j = Σ_i x_ij * w_i * (μ_i - y_i) / (V(μ_i) * g'(μ_i)) / n_eff
@@ -231,14 +231,6 @@ pub fn build_lambda_grid(lambda_max: f64) -> Vec<f64> {
 // Nota: para poder llamar al solver FISTA necesitamos una función de ajuste
 // que se pasa como closure — evita dependencia circular con solvers/smurf.rs.
 
-pub type FitFn<'a> = Box
-    dyn Fn(
-            ArrayView2<'a, f64>,
-            &'a Array1<f64>,
-            f64, // lambda
-        ) -> Result<FitSummary>
-        + 'a,
->;
 
 /// Resumen mínimo de un ajuste SMuRF para selección de lambda.
 pub struct FitSummary {
@@ -430,7 +422,7 @@ pub fn create_folds(n: usize, k: usize) -> Vec<Vec<usize>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::regularization::smurf_matrices::build_fused_lasso_matrix;
+    use crate::regularization::smurf_matrices::{build_fused_lasso_matrix, build_lasso_matrix};
     use crate::regularization::smurf_types::SmurfTermSpec;
     use ndarray::array;
 
@@ -527,8 +519,8 @@ mod tests {
             SmurfTermSpec::lasso("a", 1),
             SmurfTermSpec::lasso("b", 1),
         ];
-        let d1 = build_fused_lasso_matrix(1, None).unwrap();
-        let d2 = build_fused_lasso_matrix(1, None).unwrap();
+        let d1 = build_lasso_matrix(1).unwrap();
+        let d2 = build_lasso_matrix(1).unwrap();
         let pen_matrices = vec![Some(d1), Some(d2)];
         let pen_weights = vec![
             Array1::ones(1),

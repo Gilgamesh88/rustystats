@@ -36,6 +36,7 @@ mod irls;
 pub mod nnls;
 pub mod smooth_glm;
 pub mod smurf;
+pub mod smurf_lambda;
 
 pub use gcv_optimizer::{brent_minimize, MultiTermGCVOptimizer};
 pub use irls::{
